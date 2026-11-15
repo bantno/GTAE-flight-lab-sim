@@ -34,25 +34,50 @@ INERTIA_AS_IN_MASK = np.array([[5.787969e3, 0.0, 1.1764e2],
 #: shows up because this particular mask entry is asymmetric.
 INERTIA_SIMULINK = INERTIA_AS_IN_MASK.T.copy()
 
-#: The physically correct inertia tensor. An inertia tensor is symmetric by
-#: construction, so neither the mask matrix nor its transpose is a valid one,
-#: and integrating with them does not conserve rotational kinetic energy
-#: (measured: 5.0e-3 and 8.6e-4 relative drift over 200 s of torque-free
-#: tumbling, against ~7e-14 - i.e. machine precision - for a symmetric tensor).
+#: A SYMMETRIC inertia tensor - i.e. a physically realizable one.
 #:
-#: The FDC/Delft Beaver moment equations
+#: What is certain: an inertia tensor is symmetric by construction, because
+#: I_ij = integral (r^2 delta_ij - r_i r_j) dm and r_i r_j = r_j r_i. So the
+#: mask matrix is not a realizable inertia tensor, and the rotational dynamics
+#: it produces are not those of ANY rigid body. (Proof: torque-free motion is
+#: Ldot = -(I^-1 L) x L; two inertias give identical flows for all L only if
+#: (A^-1 - S^-1) L is parallel to L for every L, i.e. A^-1 - S^-1 = c*Identity,
+#: which forces A symmetric whenever S is. The mask matrix is not symmetric.)
+#:
+#: What is NOT verified: the SIGN below. The FDC/Delft Beaver moment equations
 #:     Ix*pdot - Jxz*rdot = L + (Iy-Iz)*q*r + Jxz*p*q
 #:     Iz*rdot - Jxz*pdot = N + (Ix-Iy)*p*q - Jxz*q*r
-#: correspond to the tensor below, with Jxz = +117.64 kg m^2 appearing as
-#: -Jxz in BOTH off-diagonal slots.
-INERTIA_PHYSICAL = np.array([[5.787969e3, 0.0, -1.1764e2],
-                             [0.0, 6.92893e3, 0.0],
-                             [-1.1764e2, 0.0, 1.1578329e4]])
+#: put -Jxz in both off-diagonal slots for Jxz = +117.64. But texts differ on
+#: whether "Jxz" denotes integral(x z dm) or its negative, and the Beaver's
+#: actual mass distribution has not been checked against any primary source.
+#: Nothing on this machine settles it: all three .slx versions carry the same
+#: asymmetric matrix, and the assignment PDF has no inertia data.
+#:
+#: MEASURE THE STAKES BEFORE TRUSTING EITHER. Over the 60 s replay profile,
+#: worst difference as a percentage of signal scale:
+#:     -Jxz vs +Jxz (the sign we are unsure of) ... 1.97 %
+#:     mask (asymmetric) vs symmetric -Jxz ....... 1.09 %
+#:     Jxz = 0 entirely vs symmetric -Jxz ........ 0.98 %
+#: The sign uncertainty is LARGER than the asymmetry it is meant to fix. Until
+#: the sign is confirmed from a primary source, "symmetric_neg" is not
+#: demonstrably closer to the truth than the stock model - it is only
+#: demonstrably self-consistent.
+INERTIA_SYMMETRIC_NEG = np.array([[5.787969e3, 0.0, -1.1764e2],
+                                  [0.0, 6.92893e3, 0.0],
+                                  [-1.1764e2, 0.0, 1.1578329e4]])
+INERTIA_SYMMETRIC_POS = np.array([[5.787969e3, 0.0, 1.1764e2],
+                                  [0.0, 6.92893e3, 0.0],
+                                  [1.1764e2, 0.0, 1.1578329e4]])
+#: Backwards-compatible alias. Prefer the explicit names above.
+INERTIA_PHYSICAL = INERTIA_SYMMETRIC_NEG
 
-#: Default: reproduce the lab model, so Python and Simulink results are
-#: comparable. Switch to "physical" for correct rigid-body dynamics; in normal
-#: flight the two differ by roughly 2 % of signal scale in the lateral states.
-INERTIA_MODES = {"simulink": INERTIA_SIMULINK, "physical": INERTIA_PHYSICAL}
+#: Default: reproduce the lab model, so Python and Simulink stay comparable.
+INERTIA_MODES = {
+    "simulink": INERTIA_SIMULINK,              # bug-for-bug with AE4803Sim
+    "symmetric_neg": INERTIA_SYMMETRIC_NEG,    # -Jxz in both slots
+    "symmetric_pos": INERTIA_SYMMETRIC_POS,    # +Jxz in both slots
+    "physical": INERTIA_SYMMETRIC_NEG,         # alias for symmetric_neg
+}
 INERTIA = INERTIA_SIMULINK
 
 

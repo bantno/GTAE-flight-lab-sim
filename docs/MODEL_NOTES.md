@@ -60,25 +60,75 @@ Note also that the *symmetric part* of the mask matrix is exactly
 `diag(Ixx, Iyy, Izz)` — the two `Ixz` entries cancel — so all of the roll/yaw
 inertial coupling lives in the skew part, which is the unphysical part.
 
-**The physically correct tensor.** The FDC/Delft Beaver moment equations
+### Could this just be a sign convention rather than an error?
+
+No. Checked explicitly, because it is the obvious objection.
+
+Texts genuinely do disagree about products of inertia — some write the tensor
+off-diagonal as `−∫xz dm`, others as `+∫xz dm`. But **every one of those
+conventions yields a symmetric matrix.** The underlying object obeys
+`I_ij = ∫(r²δ_ij − r_i r_j)dm` and `r_i r_j = r_j r_i`, so `I_ij = I_ji`
+identically. A convention flips *both* off-diagonal entries together; no
+convention can flip one and not the other. `+117.64` at (1,3) with `−117.64` at
+(3,1) is not a convention, it is two different conventions applied to the two
+halves of one matrix.
+
+**Nor is it harmless.** It would be cosmetic if the block symmetrised the
+matrix internally, since `sym(A) = sym(Aᵀ) = diag(Ixx, Iyy, Izz)` here. It does
+not: running the model with `A` and with `Aᵀ` gives materially different
+answers — 3.2 % on `beta`, 1.7 % on `p`, 1.6 % on `phi` and `psi`. Had the block
+symmetrised, those two runs would have been bit-identical.
+
+**Why it matters dynamically.** Torque-free motion is `L̇ = −(I⁻¹L) × L`. Two
+inertias `A` and `S` give identical flows for every `L` only if
+`(A⁻¹ − S⁻¹)L ∥ L` for all `L`, i.e. `A⁻¹ − S⁻¹ = c·Identity`, which forces `A`
+symmetric whenever `S` is. The mask matrix is not symmetric, so **no rigid body
+reproduces these rotational dynamics.** That is a proof, not an observation.
+
+(An earlier draft argued from rotational-KE drift. That showed one particular
+quantity is not conserved; it did not rule out some *other* conserved energy.
+The algebraic argument above is the rigorous one.)
+
+### What is NOT established: the sign
+
+Making the tensor symmetric is clearly right. *Which* symmetric value is a
+separate question, and it is **not settled**. The FDC/Delft Beaver moment
+equations
 
 ```
 Ix·ṗ − Jxz·ṙ = L + (Iy−Iz)·q·r + Jxz·p·q
 Iz·ṙ − Jxz·ṗ = N + (Ix−Iy)·p·q − Jxz·q·r
 ```
 
-correspond to `Jxz = +117.64 kg·m²` appearing as **−Jxz in both** off-diagonal
-slots:
+put `−Jxz` in both slots for `Jxz = +117.64`. But that rests on the convention
+`Jxz = ∫xz dm`, and the Beaver's real mass distribution has not been checked
+against a primary source. Nothing available locally settles it: `AE4803Sim.slx`,
+`.slx.original` and `.slx.r2022b` all carry the **same** asymmetric matrix, and
+`Simulator_Assignment_1.pdf` has no inertia data at all.
 
-```
-[ 5787.969      0   -117.64 ;
-       0   6928.93        0 ;
-  -117.64        0  11578.329 ]
-```
+**And the sign matters more than the bug.** Over the 60 s replay profile, worst
+difference as a percentage of signal scale:
 
-That is `params.INERTIA_PHYSICAL`, selectable with `inertia_mode = "physical"`
-in `config/sim.toml`. In normal flight it differs from the lab model by roughly
-2 % of signal scale in the lateral states.
+| comparison | worst difference |
+|---|---|
+| `−Jxz` vs `+Jxz` — the sign we are unsure of | **1.97 %** |
+| mask (asymmetric) vs symmetric `−Jxz` | 1.09 % |
+| dropping `Jxz` entirely vs symmetric `−Jxz` | 0.98 % |
+
+The coupling is weak to begin with: `|Jxz|/√(Ixx·Izz) = 0.0144`. All four
+candidates sit within ~2 % of one another, and the sign uncertainty is *larger*
+than the asymmetry it is meant to repair. A symmetric tensor is therefore
+demonstrably **self-consistent**, but not demonstrably **closer to the real
+aircraft**, until the sign is confirmed from the FDC source.
+
+Selectable via `inertia_mode` in `config/sim.toml`: `"simulink"` (default,
+bug-for-bug), `"symmetric_neg"`, `"symmetric_pos"`; `"physical"` is an alias
+for `symmetric_neg`.
+
+**Recommendation:** keep `simulink` as the course default. It keeps Python and
+the `.slx` comparable, and the discrepancy makes a good teaching point. Do not
+switch to a symmetric tensor on the strength of this note alone — confirm the
+sign first.
 
 (Aside: `Iyy` and `Jxz` match the published FDC Beaver exactly, and so does the
 mass, 2288.231 kg. `Ixx` and `Izz` are each exactly 419.579 kg·m² larger than
