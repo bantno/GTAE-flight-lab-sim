@@ -130,6 +130,13 @@ class FlightLogger:
         for name, attr in EXTRA_SIGNALS:
             self._rows[name].append(float(getattr(out, attr)))
 
+    def reset(self) -> None:
+        """Discard everything recorded so far (used when the sim restarts)."""
+        self._t.clear()
+        for k in self._rows:
+            self._rows[k].clear()
+        self._n = 0
+
     @property
     def n_samples(self) -> int:
         return len(self._t)

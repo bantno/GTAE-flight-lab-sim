@@ -68,8 +68,26 @@ DREF_FLAP = "sim/flightmodel/controls/flaprqst"
 #: list rather than a hopeful one. Prune this tuple to whatever actually sticks.
 #:
 #: Each entry is (dataref, Outputs attribute, scale) - value = attr * scale.
-INSTRUMENT_DREFS: tuple[tuple[str, str, float], ...] = (
-    # airspeed indicator (knots)
+#:
+#: ATTITUDE INDICATOR: the `sim/cockpit2/gauges/indicators/..._AHARS_...`
+#: datarefs are what the gauge *displays*, but X-Plane recomputes them every
+#: frame from its own flight model, so writing them does nothing. The gauge
+#: follows `sim/flightmodel/position/theta|phi|psi` instead - the aircraft's
+#: actual attitude - so those are what we write. They are listed FIRST so that
+#: if you trim this tuple with the probe tool, the important ones stay.
+ATTITUDE_DREFS: tuple[tuple[str, str, float], ...] = (
+    ("sim/flightmodel/position/theta", "theta_deg", 1.0),   # pitch [deg]
+    ("sim/flightmodel/position/phi", "phi_deg", 1.0),       # roll  [deg]
+    ("sim/flightmodel/position/psi", "psi_deg", 1.0),       # true heading [deg]
+    ("sim/flightmodel/position/P", "p_dps", 1.0),           # body roll rate [deg/s]
+    ("sim/flightmodel/position/Q", "q_dps", 1.0),           # body pitch rate
+    ("sim/flightmodel/position/R", "r_dps", 1.0),           # body yaw rate
+    ("sim/flightmodel/position/alpha", "alpha_deg", 1.0),
+    ("sim/flightmodel/position/beta", "beta_deg", 1.0),
+)
+
+INSTRUMENT_DREFS: tuple[tuple[str, str, float], ...] = ATTITUDE_DREFS + (
+    # airspeed (knots)
     ("sim/flightmodel/position/indicated_airspeed", "U_kts", 1.0),
     ("sim/cockpit2/gauges/indicators/airspeed_kts_pilot", "U_kts", 1.0),
     # altimeter (feet)
@@ -77,21 +95,25 @@ INSTRUMENT_DREFS: tuple[tuple[str, str, float], ...] = (
     # vertical speed (feet per minute)
     ("sim/flightmodel/position/vh_ind_fpm", "hdot_ft_min", 1.0),
     ("sim/cockpit2/gauges/indicators/vvi_fpm_pilot", "hdot_ft_min", 1.0),
-    # attitude indicator (degrees)
-    ("sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot", "theta_deg", 1.0),
-    ("sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot", "phi_deg", 1.0),
     # directional gyro / compass (degrees)
     ("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot", "psi_deg", 1.0),
     ("sim/cockpit2/gauges/indicators/compass_heading_deg_mag", "psi_deg", 1.0),
-    # angle of attack and sideslip
-    ("sim/cockpit2/gauges/indicators/aoa_angle_degrees", "alpha_deg", 1.0),
-    ("sim/cockpit2/gauges/indicators/sideslip_degrees", "beta_deg", 1.0),
     # engine tachometer and manifold pressure
     ("sim/cockpit2/engine/indicators/engine_speed_rpm", "rpm", 1.0),
     ("sim/cockpit2/engine/indicators/MPR_in_hg", "manifold_pressure", 1.0),
     # throttle lever position (ratio)
     ("sim/cockpit2/engine/actuators/throttle_ratio_all", "cmd_throttle", 1.0),
 )
+
+#: Stops X-Plane integrating its own flight model for the user aircraft, so our
+#: attitude writes are not overwritten on the next frame. Element 0 is the user
+#: aircraft; X-Plane accepts the `[index]` suffix inside a DREF path.
+#:
+#: Without this, X-Plane's physics keeps running underneath and fights every
+#: value we send - the attitude indicator twitches toward our number and snaps
+#: back. With it, X-Plane becomes a pure visualiser, which is what we want: our
+#: model is the authority on how the aeroplane flies.
+OVERRIDE_PLANEPATH = "sim/operation/override/override_planepath[0]"
 
 
 def pack_vehx(lat_deg: float, lon_deg: float, alt_m: float,
@@ -142,6 +164,10 @@ class XPlaneConfig:
     #: Restrict INSTRUMENT_DREFS to this list of dataref paths, if non-empty.
     #: Populate it from tools/xplane_dref_probe.py to send only what works.
     instrument_allowlist: tuple[str, ...] = ()
+    #: Take X-Plane's flight model out of the loop for the user aircraft, so our
+    #: attitude writes stick instead of being overwritten each frame. Required
+    #: for the attitude indicator to track. Released again on close().
+    override_planepath: bool = True
     #: Rate limit; X-Plane does not benefit from more than the display rate.
     rate_hz: float = 30.0
     aircraft_index: int = 0
@@ -158,9 +184,12 @@ class XPlaneSender:
         self.bytes_sent = 0
         self.errors = 0
         self._last_send = -1e9
+        self._override_sent = 0.0
         if self.cfg.enabled:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.sock.setblocking(False)
+            if self.cfg.override_planepath and self.cfg.protocol != "legacy_string":
+                self._send(pack_dref(OVERRIDE_PLANEPATH, 1.0))
 
     def _send(self, payload: bytes) -> None:
         if self.sock is None:
@@ -200,6 +229,14 @@ class XPlaneSender:
             self._send(pack_dref(DREF_FLAP, out.flap_deg / 20.0 if out.flap_deg else 0.0))
 
         if self.cfg.send_instruments:
+            # Re-assert the override periodically. X-Plane clears it on a
+            # reposition, aircraft reload or sim restart, and a silently
+            # dropped override looks exactly like "the attitude indicator
+            # stopped working" from the cockpit.
+            if self.cfg.override_planepath and (now - self._override_sent) > 2.0:
+                self._override_sent = now
+                self._send(pack_dref(OVERRIDE_PLANEPATH, 1.0))
+
             allow = self.cfg.instrument_allowlist
             for path, attr, scale in INSTRUMENT_DREFS:
                 if allow and path not in allow:
@@ -212,5 +249,12 @@ class XPlaneSender:
 
     def close(self) -> None:
         if self.sock is not None:
+            # Hand the aircraft back to X-Plane's own flight model, or it sits
+            # frozen in mid-air after we exit and the user has to restart it.
+            if self.cfg.override_planepath and self.cfg.protocol != "legacy_string":
+                try:
+                    self._send(pack_dref(OVERRIDE_PLANEPATH, 0.0))
+                except OSError:
+                    pass
             self.sock.close()
             self.sock = None

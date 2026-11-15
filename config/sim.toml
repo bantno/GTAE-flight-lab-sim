@@ -74,6 +74,17 @@ legacy_digits = 10
 # the panel's airspeed/VSI/tach/manifold gauges come from X-Plane's own flight
 # model, which we are bypassing, so we write them explicitly.
 send_instruments = true
+# Take X-Plane's own flight model out of the loop for the user aircraft
+# (sim/operation/override/override_planepath[0]).
+#
+# REQUIRED for the attitude indicator to track. Without it X-Plane keeps
+# integrating its own physics underneath and overwrites our pitch/roll every
+# frame - the horizon twitches toward our value and snaps back. With it,
+# X-Plane is a pure visualiser and our model is the authority.
+#
+# It is re-asserted every 2 s (X-Plane drops it on a reposition or aircraft
+# reload) and released on exit, so the aircraft does not sit frozen afterwards.
+override_planepath = true
 # Not every cockpit dataref is writable - some are recomputed each frame and
 # ignore writes. Run `python tools/xplane_dref_probe.py` with X-Plane open to
 # measure which ones stick, then paste its output here to send only those.

@@ -106,6 +106,7 @@ def build(cfg: dict, args) -> tuple:
             send_datarefs=bool(xp.get("send_datarefs", True)),
             send_instruments=bool(xp.get("send_instruments", True)),
             instrument_allowlist=tuple(xp.get("instrument_allowlist", ())),
+            override_planepath=bool(xp.get("override_planepath", True)),
             rate_hz=float(xp.get("rate_hz", 30.0)),
             legacy_digits=int(xp.get("legacy_digits", 10)),
         ))

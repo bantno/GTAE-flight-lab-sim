@@ -264,6 +264,35 @@ class RealTimeLoop:
     def set_autostop(self, v: bool) -> None:
         self.model.autostop_cfg.enabled = bool(v)
 
+    def restart(self) -> None:
+        """Re-fly from the initial condition without tearing anything down.
+
+        Keeps any derivative edits - the usual reason to restart is to fly the
+        SAME modified aircraft again from a known start. The tuning log is
+        rebuilt so every non-default value is re-stamped at t = 0, otherwise the
+        log would carry timestamps from before the restart and be unreadable.
+        Accumulated flight-log samples and timing statistics are discarded,
+        since they describe a different flight.
+        """
+        changed = {e["key"]: e["new"] for e in self.tuning_log.entries}
+        defaults = {e["key"]: e["old"] for e in reversed(self.tuning_log.entries)}
+
+        self.state = self.model.reset()
+        self.sim_time = 0.0
+        self.stop_reason = ""
+        self.stats = TimingStats(rate_hz=self.cfg.rate_hz)
+        self.stats.wall_start = time.perf_counter()
+
+        self.tuning_log = tuning.TuningLog()
+        for key, new in changed.items():
+            if abs(new - defaults.get(key, new)) > 1e-12:
+                self.tuning_log.record(0.0, key, defaults[key], new)
+
+        if self.logger is not None:
+            self.logger.reset()
+        with self._lock:
+            self._snapshot = None
+
     def set_parameter(self, key: str, value: float) -> float:
         """Apply a model parameter change as a step, and record it.
 

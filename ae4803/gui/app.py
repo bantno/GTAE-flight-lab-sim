@@ -134,6 +134,19 @@ class MainWindow(QMainWindow):
             f"QPushButton {{ background:#2b303a; border:1px solid #434a56;"
             f"  border-radius:3px; padding:5px 12px; }}"
             f"QPushButton:hover {{ background:#353c48; }}"
+            # Tab labels: white, and readable whether selected or not. Without
+            # this they inherit the dark palette and the unselected tab is
+            # effectively invisible against the background.
+            f"QTabWidget::pane {{ border:1px solid #343a44; top:-1px; }}"
+            f"QTabBar::tab {{ background:#2b303a; color:#ffffff;"
+            f"  padding:6px 16px; margin-right:2px;"
+            f"  border:1px solid #434a56; border-bottom:none;"
+            f"  border-top-left-radius:3px; border-top-right-radius:3px;"
+            f"  font-size:9pt; }}"
+            f"QTabBar::tab:selected {{ background:#3d4756; color:#ffffff;"
+            f"  border-color:#5a6578; }}"
+            f"QTabBar::tab:!selected {{ color:#ffffff; }}"
+            f"QTabBar::tab:hover {{ background:#353c48; }}"
         )
 
         # Pre-allocated ring buffers - no per-frame allocation, no fromiter().
@@ -236,11 +249,17 @@ class MainWindow(QMainWindow):
         self.cb_stop.toggled.connect(self.loop.set_autostop)
         self.btn_pause = QPushButton("Pause")
         self.btn_pause.clicked.connect(self._toggle_pause)
+        self.btn_restart = QPushButton("Restart")
+        self.btn_restart.setToolTip(
+            "Re-fly from the initial condition (914 m, 45 m/s).\n"
+            "Keeps any derivative edits; discards the flight recorded so far.")
+        self.btn_restart.clicked.connect(self._restart)
         self.btn_quit = QPushButton("Stop && save log")
         self.btn_quit.clicked.connect(self._quit)
         for w in (self.cb_wl, self.cb_ah, self.cb_stop):
             cl.addWidget(w)
         cl.addStretch(1)
+        cl.addWidget(self.btn_restart)
         cl.addWidget(self.btn_pause)
         cl.addWidget(self.btn_quit)
         left.addWidget(ctrl)
@@ -298,6 +317,22 @@ class MainWindow(QMainWindow):
                                                              style=Qt.PenStyle.DashLine)))
 
     # --- interaction ------------------------------------------------------
+    def _restart(self) -> None:
+        self.loop.restart()
+        # Drop the chart history too, or the traces would show the old flight
+        # alongside the new one at overlapping sim times.
+        self._head = 0
+        self._count = 0
+        self._buf_t[:] = 0.0
+        for v in self._buf.values():
+            v[:] = 0.0
+        for chart in (self.ch_att, self.ch_cmd, self.ch_spd,
+                      self.ch_alt, self.ch_rate):
+            for curve in chart.curves.values():
+                curve.setData([], [])
+        if self.loop.paused:
+            self._toggle_pause()
+
     def _toggle_pause(self) -> None:
         self.loop.paused = not self.loop.paused
         self.btn_pause.setText("Resume" if self.loop.paused else "Pause")

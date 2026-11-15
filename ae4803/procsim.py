@@ -46,7 +46,7 @@ FIELDS: tuple[str, ...] = (
 STATUS: tuple[str, ...] = (
     "running", "paused", "steps", "overruns", "late_p99_us",
     "real_time_factor", "sim_time", "autostop", "joystick_warning",
-    "param_changes",
+    "param_changes", "restarts",
 )
 ALL_FIELDS = FIELDS + STATUS
 IDX = {name: i for i, name in enumerate(ALL_FIELDS)}
@@ -158,6 +158,10 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
                         buf[IDX["param_changes"]] = len(loop_ref.tuning_log)
                     except Exception as exc:
                         print(f"set_param {key} failed: {exc}", flush=True)
+                elif cmd == "restart":
+                    loop_ref.restart()
+                    buf[IDX["param_changes"]] = len(loop_ref.tuning_log)
+                    buf[IDX["restarts"]] = buf[IDX["restarts"]] + 1.0
                 elif cmd == "stop":
                     loop_ref.stop(str(val))
         except queue.Empty:
@@ -295,6 +299,14 @@ class PhysicsProcess:
     def set_parameter(self, key: str, value: float) -> None:
         """Change a model parameter in the physics process, as a step."""
         self._cmd_q.put(("set_param", (str(key), float(value))))
+
+    def restart(self) -> None:
+        """Re-fly from the initial condition, keeping any derivative edits."""
+        self._cmd_q.put(("restart", True))
+
+    @property
+    def restarts(self) -> int:
+        return int(self._view[IDX["restarts"]])
 
     @property
     def param_changes(self) -> int:

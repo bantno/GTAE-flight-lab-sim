@@ -190,11 +190,13 @@ class ParameterPanel(QWidget):
                 border-right:4px solid transparent; border-top:5px solid #8a92a0; }
             QLineEdit { background:#12151a; color:#e2e6ec;
                         border:1px solid #3a414c; border-radius:3px; padding:3px 6px; }
-            QTabBar::tab { background:#242931; color:#9aa2b0;
-                           padding:5px 11px; border:1px solid #343a44;
+            QTabBar::tab { background:#2b303a; color:#ffffff;
+                           padding:6px 12px; border:1px solid #434a56;
                            border-bottom:none; font-size:8pt; }
-            QTabBar::tab:selected { background:#2f3742; color:#ffffff; }
-            QTabBar::tab:hover { background:#2a313b; }
+            QTabBar::tab:selected { background:#3d4756; color:#ffffff;
+                                    border-color:#5a6578; }
+            QTabBar::tab:!selected { color:#ffffff; }
+            QTabBar::tab:hover { background:#353c48; }
             QTabWidget::pane { border:1px solid #343a44; top:-1px; }
         """)
 
