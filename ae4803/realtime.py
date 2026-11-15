@@ -198,13 +198,18 @@ class RealTimeLoop:
     """Runs a FlightModel at a fixed rate on its own thread."""
 
     def __init__(self, model, input_source, cfg: LoopConfig | None = None,
-                 logger=None, xplane=None, on_step=None, on_stop=None):
+                 logger=None, xplane=None, on_step=None, on_stop=None,
+                 on_poll=None):
         self.model = model
         self.input_source = input_source
         self.cfg = cfg or LoopConfig()
         self.logger = logger
         self.xplane = xplane
+        #: called once per completed step, with the Outputs
         self.on_step = on_step
+        #: called once per loop iteration with the loop, EVEN WHILE PAUSED -
+        #: this is where incoming commands must be handled
+        self.on_poll = on_poll
         self.on_stop = on_stop
 
         self.stats = TimingStats(rate_hz=self.cfg.rate_hz)
@@ -290,6 +295,12 @@ class RealTimeLoop:
                 _sleep_until(next_deadline, self.cfg.spin_margin_s)
                 begin = time.perf_counter()
                 lateness = begin - next_deadline
+
+                # Drained EVERY iteration, including while paused. If this only
+                # ran with the step, a paused loop could never see the command
+                # that resumes it - pause would be a one-way trip.
+                if self.on_poll is not None:
+                    self.on_poll(self)
 
                 if self.paused:
                     next_deadline = begin + h

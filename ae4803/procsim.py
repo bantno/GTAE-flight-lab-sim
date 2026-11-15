@@ -136,8 +136,8 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
                    timer_resolution_ms=int(cfg.get("solver", {}).get("timer_resolution_ms", 1))),
         logger=logger, xplane=sender)
 
-    def on_step(out):
-        publish(out, loop)
+    def drain_commands(loop_ref):
+        """Runs every loop iteration, including while paused."""
         try:
             while True:
                 cmd, val = cmd_q.get_nowait()
@@ -148,13 +148,15 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
                 elif cmd == "autostop":
                     model.autostop_cfg.enabled = bool(val)
                 elif cmd == "pause":
-                    loop.paused = bool(val)
+                    loop_ref.paused = bool(val)
+                    buf[IDX["paused"]] = 1.0 if val else 0.0
                 elif cmd == "stop":
-                    loop.stop(str(val))
+                    loop_ref.stop(str(val))
         except queue.Empty:
             pass
 
-    loop.on_step = on_step
+    loop.on_step = lambda out: publish(out, loop)
+    loop.on_poll = drain_commands
     loop.start()
 
     duration = args_dict.get("duration")
