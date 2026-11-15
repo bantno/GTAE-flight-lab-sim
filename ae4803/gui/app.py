@@ -20,7 +20,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (QCheckBox, QFrame, QGridLayout, QGroupBox,
                              QHBoxLayout, QLabel, QMainWindow, QPushButton,
-                             QVBoxLayout, QWidget)
+                             QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
 from .gauges import (AirspeedIndicator, Altimeter, AttitudeIndicator,
                      ClimbIndicator, HeadingIndicator, ACCENT, AMBER, BG,
@@ -179,6 +179,14 @@ class MainWindow(QMainWindow):
         gauges.addWidget(self.alt, 0, 2)
         gauges.addWidget(self.hdg, 1, 0)
         gauges.addWidget(self.vsi, 1, 1)
+        # Equal stretch, or the STATUS box's natural width inflates its column
+        # and the gauge above it balloons to match.
+        for c in range(3):
+            gauges.setColumnStretch(c, 1)
+        for r_ in range(2):
+            gauges.setRowStretch(r_, 1)
+        for g in (self.asi, self.adi, self.alt, self.hdg, self.vsi):
+            g.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         status = QGroupBox("STATUS")
         sv = QVBoxLayout(status)
@@ -190,6 +198,8 @@ class MainWindow(QMainWindow):
         self.r_state = Readout("state", "")
         for w in (self.r_time, self.r_rtf, self.r_over, self.r_late, self.r_state):
             sv.addWidget(w)
+        sv.addStretch(1)
+        status.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         gauges.addWidget(status, 1, 2)
         left.addLayout(gauges, 3)
 
@@ -243,8 +253,10 @@ class MainWindow(QMainWindow):
 
         root.addLayout(left, 5)
 
-        # ---- right: strip charts ----
-        right = QVBoxLayout()
+        # ---- right: strip charts / derivative editor ----
+        charts = QWidget()
+        right = QVBoxLayout(charts)
+        right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(6)
         self.ch_att = StripChart("attitude & flow angles  [deg]",
                                  ["phi", "theta", "alpha", "beta"], (-30, 30))
@@ -255,7 +267,21 @@ class MainWindow(QMainWindow):
         self.ch_rate = StripChart("body rates  [deg/s]", ["p", "q", "r"], (-30, 30))
         for c in (self.ch_att, self.ch_cmd, self.ch_spd, self.ch_alt, self.ch_rate):
             right.addWidget(c)
-        root.addLayout(right, 4)
+
+        self.right_tabs = QTabWidget()
+        self.right_tabs.addTab(charts, "Strip charts")
+
+        # The physics may live in another process, so the panel gets its own
+        # Params for the display defaults - identical numbers, same .mat file.
+        self.params_panel = None
+        try:
+            from ..params import Params
+            from .params_panel import ParameterPanel
+            self.params_panel = ParameterPanel(Params.load(), self.loop)
+            self.right_tabs.addTab(self.params_panel, "Derivatives")
+        except Exception as exc:                                  # pragma: no cover
+            print(f"parameter panel unavailable: {exc}")
+        root.addWidget(self.right_tabs, 4)
 
         # Airspeed validity bands drawn onto the strip chart too.
         from .gauges import V_AMBER, V_GREEN, V_STOP_HIGH, V_STOP_LOW
@@ -275,6 +301,8 @@ class MainWindow(QMainWindow):
     def _toggle_pause(self) -> None:
         self.loop.paused = not self.loop.paused
         self.btn_pause.setText("Resume" if self.loop.paused else "Pause")
+        if self.params_panel is not None:
+            self.params_panel.sync_pause_button()
 
     def _quit(self) -> None:
         self.loop.stop("stopped from the GUI")
@@ -341,27 +369,35 @@ class MainWindow(QMainWindow):
                          AMBER if self.loop.paused else
                          (GREEN if self.loop.running else RED))
 
-        # history ring buffer (cheap: scalar stores, no allocation)
-        i = self._head
-        self._buf_t[i] = o.t
-        b = self._buf
-        b["phi"][i] = o.phi_deg
-        b["theta"][i] = o.theta_deg
-        b["alpha"][i] = o.alpha_deg
-        b["beta"][i] = o.beta_deg
-        b["psi"][i] = o.psi_deg
-        b["stick_lat"][i] = o.stick_lat
-        b["stick_long"][i] = o.stick_long
-        b["pedal"][i] = o.pedal
-        b["throttle"][i] = o.throttle_in
-        b["U"][i] = o.U
-        b["alt_m"][i] = o.alt_m
-        b["p"][i] = o.p_dps
-        b["q"][i] = o.q_dps
-        b["r"][i] = o.r_dps
-        b["hdot"][i] = o.hdot_ft_min
-        self._head = (i + 1) % self._cap
-        self._count = min(self._count + 1, self._cap)
+        # History ring buffer (cheap: scalar stores, no allocation).
+        # Only append when sim time has actually ADVANCED. Once the loop stops -
+        # or while it is paused - the snapshot keeps returning the same Outputs,
+        # and appending it would pack the buffer with identical points at one
+        # instant, collapsing every strip chart to a single x value and
+        # autoscaling the y axis to nothing.
+        advanced = (self._count == 0
+                    or o.t > self._buf_t[(self._head - 1) % self._cap])
+        if advanced:
+            i = self._head
+            self._buf_t[i] = o.t
+            b = self._buf
+            b["phi"][i] = o.phi_deg
+            b["theta"][i] = o.theta_deg
+            b["alpha"][i] = o.alpha_deg
+            b["beta"][i] = o.beta_deg
+            b["psi"][i] = o.psi_deg
+            b["stick_lat"][i] = o.stick_lat
+            b["stick_long"][i] = o.stick_long
+            b["pedal"][i] = o.pedal
+            b["throttle"][i] = o.throttle_in
+            b["U"][i] = o.U
+            b["alt_m"][i] = o.alt_m
+            b["p"][i] = o.p_dps
+            b["q"][i] = o.q_dps
+            b["r"][i] = o.r_dps
+            b["hdot"][i] = o.hdot_ft_min
+            self._head = (i + 1) % self._cap
+            self._count = min(self._count + 1, self._cap)
 
         msgs = []
         if self.joystick is not None and getattr(self.joystick, "watchdog", None) \
@@ -395,6 +431,8 @@ class MainWindow(QMainWindow):
         return self._buf_t[idx], {k: v[idx] for k, v in self._buf.items()}
 
     def _refresh_charts(self) -> None:
+        if self.params_panel is not None:
+            self.params_panel.sync_pause_button()
         if self._count < 2:
             return
         t, h = self._ordered()

@@ -53,6 +53,46 @@ DREF_HEADING = "sim/flightmodel2/controls/heading_ratio"
 DREF_SPEEDBRAKE = "sim/flightmodel2/controls/speedbrake_ratio"
 DREF_FLAP = "sim/flightmodel/controls/flaprqst"
 
+#: Cockpit instrument datarefs, beyond what VEHX implies.
+#:
+#: VEHX only places the aircraft - position and attitude. X-Plane then derives
+#: what it can from successive positions, but the panel's airspeed, VSI,
+#: tachometer and manifold gauges are driven by X-Plane's own flight model,
+#: which we are bypassing. Writing these makes the 3D cockpit agree with our
+#: model instead of guessing.
+#:
+#: IMPORTANT: not every one of these is writable in every X-Plane build - some
+#: `sim/cockpit2/...` indicators are recomputed each frame and will ignore a
+#: write. Run `python tools/xplane_dref_probe.py` with X-Plane open: it writes
+#: each dataref and reads it back over the RREF protocol, so you get a measured
+#: list rather than a hopeful one. Prune this tuple to whatever actually sticks.
+#:
+#: Each entry is (dataref, Outputs attribute, scale) - value = attr * scale.
+INSTRUMENT_DREFS: tuple[tuple[str, str, float], ...] = (
+    # airspeed indicator (knots)
+    ("sim/flightmodel/position/indicated_airspeed", "U_kts", 1.0),
+    ("sim/cockpit2/gauges/indicators/airspeed_kts_pilot", "U_kts", 1.0),
+    # altimeter (feet)
+    ("sim/cockpit2/gauges/indicators/altitude_ft_pilot", "alt_ft", 1.0),
+    # vertical speed (feet per minute)
+    ("sim/flightmodel/position/vh_ind_fpm", "hdot_ft_min", 1.0),
+    ("sim/cockpit2/gauges/indicators/vvi_fpm_pilot", "hdot_ft_min", 1.0),
+    # attitude indicator (degrees)
+    ("sim/cockpit2/gauges/indicators/pitch_AHARS_deg_pilot", "theta_deg", 1.0),
+    ("sim/cockpit2/gauges/indicators/roll_AHARS_deg_pilot", "phi_deg", 1.0),
+    # directional gyro / compass (degrees)
+    ("sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot", "psi_deg", 1.0),
+    ("sim/cockpit2/gauges/indicators/compass_heading_deg_mag", "psi_deg", 1.0),
+    # angle of attack and sideslip
+    ("sim/cockpit2/gauges/indicators/aoa_angle_degrees", "alpha_deg", 1.0),
+    ("sim/cockpit2/gauges/indicators/sideslip_degrees", "beta_deg", 1.0),
+    # engine tachometer and manifold pressure
+    ("sim/cockpit2/engine/indicators/engine_speed_rpm", "rpm", 1.0),
+    ("sim/cockpit2/engine/indicators/MPR_in_hg", "manifold_pressure", 1.0),
+    # throttle lever position (ratio)
+    ("sim/cockpit2/engine/actuators/throttle_ratio_all", "cmd_throttle", 1.0),
+)
+
 
 def pack_vehx(lat_deg: float, lon_deg: float, alt_m: float,
               psi_deg: float, theta_deg: float, phi_deg: float,
@@ -97,6 +137,11 @@ class XPlaneConfig:
     protocol: str = "vehx"
     #: Send control-surface datarefs alongside the position packet.
     send_datarefs: bool = True
+    #: Also drive the 3D cockpit instruments (see INSTRUMENT_DREFS).
+    send_instruments: bool = True
+    #: Restrict INSTRUMENT_DREFS to this list of dataref paths, if non-empty.
+    #: Populate it from tools/xplane_dref_probe.py to send only what works.
+    instrument_allowlist: tuple[str, ...] = ()
     #: Rate limit; X-Plane does not benefit from more than the display rate.
     rate_hz: float = 30.0
     aircraft_index: int = 0
@@ -153,6 +198,16 @@ class XPlaneSender:
             self._send(pack_dref(DREF_PITCH, out.cmd_pitch))
             self._send(pack_dref(DREF_HEADING, out.cmd_yaw))
             self._send(pack_dref(DREF_FLAP, out.flap_deg / 20.0 if out.flap_deg else 0.0))
+
+        if self.cfg.send_instruments:
+            allow = self.cfg.instrument_allowlist
+            for path, attr, scale in INSTRUMENT_DREFS:
+                if allow and path not in allow:
+                    continue
+                try:
+                    self._send(pack_dref(path, float(getattr(out, attr)) * scale))
+                except AttributeError:
+                    continue
         return True
 
     def close(self) -> None:

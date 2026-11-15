@@ -53,6 +53,16 @@ send_datarefs = true
 rate_hz = 30.0
 legacy_digits = 10
 
+# Drive X-Plane's 3D cockpit instruments too. VEHX only places the aircraft;
+# the panel's airspeed/VSI/tach/manifold gauges come from X-Plane's own flight
+# model, which we are bypassing, so we write them explicitly.
+send_instruments = true
+# Not every cockpit dataref is writable - some are recomputed each frame and
+# ignore writes. Run `python tools/xplane_dref_probe.py` with X-Plane open to
+# measure which ones stick, then paste its output here to send only those.
+# Empty list = send them all.
+instrument_allowlist = []
+
 [logging]
 enabled = true
 directory = "flightlogs"

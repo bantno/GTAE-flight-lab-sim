@@ -100,6 +100,9 @@ class FlightLogger:
     params_mat: Path | None = None
     max_samples: int | None = None
     decimate: int = 1
+    #: ae4803.tuning.TuningLog, if parameters were changed in flight. Without
+    #: this the log is uninterpretable after a mid-flight derivative change.
+    tuning_log: object | None = None
 
     _t: list[float] = field(default_factory=list, init=False)
     _rows: dict[str, list] = field(default_factory=dict, init=False)
@@ -181,6 +184,16 @@ class FlightLogger:
             extra[matlab_safe(name)] = np.asarray(self._rows[name],
                                                   dtype=float).reshape(-1, 1)
         payload["extra"] = extra
+
+        # Mid-flight parameter changes, so post-processing knows what the model
+        # was at any instant.
+        if self.tuning_log is not None and len(self.tuning_log):
+            payload["paramChanges"] = self.tuning_log.to_mat()
+        else:
+            payload["paramChanges"] = {"t": np.zeros((0, 1)),
+                                       "key": np.array([], dtype=object),
+                                       "old": np.zeros((0, 1)),
+                                       "new": np.zeros((0, 1))}
 
         payload["logInfo"] = {
             "source": "AE4803 PySim",

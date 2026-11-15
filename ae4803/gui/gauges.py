@@ -15,7 +15,8 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QPainter,
+                         QPainterPath, QPen)
 from PyQt6.QtWidgets import QWidget
 
 MPS_TO_KTS = 1.943845249222
@@ -50,16 +51,55 @@ class Instrument(QWidget):
         self.title = title
         self.setMinimumSize(150, 150)
 
+    #: Fraction of the widget height reserved BELOW the dial for the numeric
+    #: readout. Keeping the numbers outside the dial is the only way to stop
+    #: them colliding with the tick labels, which ring the face at 0.60r.
+    CAPTION_FRAC = 0.22
+
     def _dial(self, p: QPainter):
         w, h = self.width(), self.height()
-        side = min(w, h)
-        cx, cy = w / 2.0, h / 2.0
-        r = side / 2.0 - 8.0
+        avail_h = h * (1.0 - self.CAPTION_FRAC)
+        side = min(w, avail_h)
+        cx, cy = w / 2.0, avail_h / 2.0
+        r = side / 2.0 - 6.0
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(QPen(QColor(70, 76, 86), 2))
         p.setBrush(QBrush(QColor(30, 33, 39)))
         p.drawEllipse(QPointF(cx, cy), r, r)
         return cx, cy, r
+
+    def _caption(self, p: QPainter, main: str, sub: str = "",
+                 color: QColor = FG):
+        """Numeric readout in the strip below the dial."""
+        w, h = self.width(), self.height()
+        cap = h * self.CAPTION_FRAC
+        top = h - cap
+        main_h = cap * (0.60 if sub else 0.95)
+        f = self._fit(QFont("Consolas", max(9, int(cap * (0.40 if sub else 0.46))),
+                            QFont.Weight.Bold), main, w * 0.96)
+        p.setFont(f)
+        p.setPen(QPen(color))
+        p.drawText(QRectF(0, top, w, main_h),
+                   Qt.AlignmentFlag.AlignCenter, main)
+        if sub:
+            f2 = self._fit(QFont("Segoe UI", max(7, int(cap * 0.26))), sub, w * 0.96)
+            p.setFont(f2)
+            p.setPen(QPen(DIM))
+            p.drawText(QRectF(0, top + cap * 0.58, w, cap * 0.40),
+                       Qt.AlignmentFlag.AlignCenter, sub)
+
+    @staticmethod
+    def _fit(font: QFont, text: str, max_width: float) -> QFont:
+        """Shrink the font until the text fits, so a wide value (a five-digit
+        altitude, both attitude angles) cannot spill into the next gauge."""
+        for _ in range(12):
+            if QFontMetricsF(font).horizontalAdvance(text) <= max_width:
+                break
+            size = font.pointSize()
+            if size <= 7:
+                break
+            font.setPointSize(size - 1)
+        return font
 
     def _label(self, p: QPainter, cx: float, cy: float, r: float, text: str,
                dy: float = 0.52, size: float = 0.13, color: QColor = DIM):
@@ -67,15 +107,6 @@ class Instrument(QWidget):
         p.setFont(f)
         p.setPen(QPen(color))
         p.drawText(QRectF(cx - r, cy + r * dy, 2 * r, r * 0.3),
-                   Qt.AlignmentFlag.AlignCenter, text)
-
-    def _readout(self, p: QPainter, cx: float, cy: float, r: float, text: str,
-                 dy: float = -0.40, size: float = 0.22, color: QColor = FG):
-        f = QFont("Consolas", max(8, int(r * size)))
-        f.setBold(True)
-        p.setFont(f)
-        p.setPen(QPen(color))
-        p.drawText(QRectF(cx - r, cy + r * dy, 2 * r, r * 0.34),
                    Qt.AlignmentFlag.AlignCenter, text)
 
     @staticmethod
@@ -161,10 +192,8 @@ class AirspeedIndicator(Instrument):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r * 0.05, r * 0.05)
 
-        self._readout(p, cx, cy, r, f"{self.value:5.1f} m/s", dy=0.14, size=0.19)
-        self._readout(p, cx, cy, r, f"{self.value * MPS_TO_KTS:5.1f} kt",
-                      dy=0.30, size=0.14, color=DIM)
-        self._label(p, cx, cy, r, "AIRSPEED", dy=-0.62, size=0.12)
+        self._caption(p, f"{self.value:.1f} m/s",
+                      f"{self.value * MPS_TO_KTS:.1f} kt   AIRSPEED")
         p.end()
 
 
@@ -226,8 +255,7 @@ class AttitudeIndicator(Instrument):
         p.drawLine(QPointF(cx + 0.10 * r, cy), QPointF(cx + 0.34 * r, cy))
         p.drawLine(QPointF(cx, cy - 0.05 * r), QPointF(cx, cy + 0.05 * r))
 
-        self._label(p, cx, cy, r, f"φ {self.roll:+.1f}°   θ {self.pitch:+.1f}°",
-                    dy=0.62, size=0.12, color=FG)
+        self._caption(p, f"φ {self.roll:+.1f}°   θ {self.pitch:+.1f}°", "ATTITUDE")
         p.end()
 
 
@@ -264,9 +292,8 @@ class Altimeter(Instrument):
         p.setBrush(QBrush(FG)); p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r * 0.05, r * 0.05)
 
-        self._readout(p, cx, cy, r, f"{self.alt_ft:6.0f} ft", dy=0.16, size=0.18)
-        self._readout(p, cx, cy, r, f"{self.alt_m:6.1f} m", dy=0.32, size=0.13, color=DIM)
-        self._label(p, cx, cy, r, "ALTITUDE", dy=-0.64, size=0.12)
+        self._caption(p, f"{self.alt_ft:,.0f} ft",
+                      f"{self.alt_m:.1f} m   ALTITUDE")
         p.end()
 
 
@@ -310,8 +337,7 @@ class HeadingIndicator(Instrument):
         p.drawPolygon(QPointF(cx, cy - 0.90 * r), QPointF(cx - 0.06 * r, cy - 0.78 * r),
                       QPointF(cx + 0.06 * r, cy - 0.78 * r))
 
-        self._readout(p, cx, cy, r, f"{self.heading % 360.0:05.1f}°", dy=0.42, size=0.19)
-        self._label(p, cx, cy, r, "HEADING", dy=-0.66, size=0.12)
+        self._caption(p, f"{self.heading % 360.0:05.1f}°", "HEADING")
         p.end()
 
 
@@ -355,7 +381,7 @@ class ClimbIndicator(Instrument):
         p.setBrush(QBrush(FG)); p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r * 0.05, r * 0.05)
 
-        self._readout(p, cx, cy, r, f"{self.rate:+6.0f}", dy=0.20, size=0.19)
-        self._label(p, cx, cy, r, "ft/min  x1000", dy=0.40, size=0.11)
-        self._label(p, cx, cy, r, "VERT SPEED", dy=-0.66, size=0.12)
+        self._caption(p, f"{self.rate:+,.0f}", "ft/min   VERTICAL SPEED",
+                      color=FG if abs(self.rate) < 2000 else AMBER)
+        
         p.end()

@@ -56,7 +56,7 @@ def build(cfg: dict, args) -> tuple:
             altitude_ref_mode=str(ap.get("altitude_ref_mode", "capture")),
         ),
         autostop=AutoStopConfig(
-            enabled=bool(st.get("enabled", True)),
+            enabled=bool(st.get("enabled", True)) and not getattr(args, "no_autostop", False),
             fix_altitude_test=bool(st.get("fix_altitude_test", False)),
         ),
         wind=WindModel(turbulence_on=bool(wd.get("turbulence", False)),
@@ -92,6 +92,8 @@ def build(cfg: dict, args) -> tuple:
             port=int(xp.get("port", 49000)),
             protocol=str(xp.get("protocol", "vehx")),
             send_datarefs=bool(xp.get("send_datarefs", True)),
+            send_instruments=bool(xp.get("send_instruments", True)),
+            instrument_allowlist=tuple(xp.get("instrument_allowlist", ())),
             rate_hz=float(xp.get("rate_hz", 30.0)),
             legacy_digits=int(xp.get("legacy_digits", 10)),
         ))
@@ -147,6 +149,10 @@ def main() -> int:
                     help="stop after this many seconds of sim time")
     ap.add_argument("--devices", action="store_true",
                     help="list joystick devices and exit")
+    ap.add_argument("--no-autostop", action="store_true",
+                    help="disable the model's auto-stop for this run")
+    ap.add_argument("--gui-tab", choices=["charts", "derivatives"], default="charts",
+                    help="which right-hand tab to open on startup")
     ap.add_argument("--threaded", action="store_true",
                     help="run the physics on a thread instead of its own "
                          "process (simpler, but the GUI can then delay it)")
@@ -204,6 +210,8 @@ def main() -> int:
                 print(f"  flight log      : {r.log_path}")
 
         win = MainWindow(proc, joystick=None, on_quit=on_quit_proc)
+        if args.gui_tab == "derivatives" and win.params_panel is not None:
+            win.right_tabs.setCurrentWidget(win.params_panel)
         win.show()
         proc.start()
 

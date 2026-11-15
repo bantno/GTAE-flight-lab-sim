@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import tuning
 from .controls import PilotCommands
 
 
@@ -213,6 +214,8 @@ class RealTimeLoop:
         self.on_stop = on_stop
 
         self.stats = TimingStats(rate_hz=self.cfg.rate_hz)
+        #: every in-flight parameter change, for the flight log
+        self.tuning_log = tuning.TuningLog()
         self.state = model.reset()
         self.sim_time = 0.0
         self.paused = False
@@ -260,6 +263,17 @@ class RealTimeLoop:
 
     def set_autostop(self, v: bool) -> None:
         self.model.autostop_cfg.enabled = bool(v)
+
+    def set_parameter(self, key: str, value: float) -> float:
+        """Apply a model parameter change as a step, and record it.
+
+        Safe to call at any time, running or paused: the model re-reads every
+        coefficient on each derivative evaluation, so the new value is live on
+        the next RK4 stage.
+        """
+        old = tuning.apply(self.model.p, key, float(value))
+        self.tuning_log.record(self.sim_time, key, old, float(value))
+        return old
 
     @property
     def initial_flags(self) -> dict:

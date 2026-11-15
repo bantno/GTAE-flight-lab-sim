@@ -46,6 +46,7 @@ FIELDS: tuple[str, ...] = (
 STATUS: tuple[str, ...] = (
     "running", "paused", "steps", "overruns", "late_p99_us",
     "real_time_factor", "sim_time", "autostop", "joystick_warning",
+    "param_changes",
 )
 ALL_FIELDS = FIELDS + STATUS
 IDX = {name: i for i, name in enumerate(ALL_FIELDS)}
@@ -150,6 +151,13 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
                 elif cmd == "pause":
                     loop_ref.paused = bool(val)
                     buf[IDX["paused"]] = 1.0 if val else 0.0
+                elif cmd == "set_param":
+                    key, value = val
+                    try:
+                        loop_ref.set_parameter(key, value)
+                        buf[IDX["param_changes"]] = len(loop_ref.tuning_log)
+                    except Exception as exc:
+                        print(f"set_param {key} failed: {exc}", flush=True)
                 elif cmd == "stop":
                     loop_ref.stop(str(val))
         except queue.Empty:
@@ -174,10 +182,12 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
 
     log_path = None
     if logger is not None and logger.n_samples:
+        logger.tuning_log = loop.tuning_log
         log_path = str(logger.save(metadata={
             "rate_hz": loop.cfg.rate_hz,
             "stopReason": loop.stop_reason or "",
             "inertiaMode": cfg.get("model", {}).get("inertia_mode", "simulink"),
+            "paramChangeCount": float(len(loop.tuning_log)),
         }))
     warnings = list(getattr(source, "watchdog", None).warnings) \
         if getattr(source, "watchdog", None) else []
@@ -281,6 +291,14 @@ class PhysicsProcess:
 
     def set_autostop(self, v: bool) -> None:
         self._cmd_q.put(("autostop", bool(v)))
+
+    def set_parameter(self, key: str, value: float) -> None:
+        """Change a model parameter in the physics process, as a step."""
+        self._cmd_q.put(("set_param", (str(key), float(value))))
+
+    @property
+    def param_changes(self) -> int:
+        return int(self._view[IDX["param_changes"]])
 
     @property
     def initial_flags(self) -> dict:
