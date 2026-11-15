@@ -54,6 +54,16 @@ altitude_ref_mode = "capture"
 
 [autostop]
 enabled = true
+# Thresholds, matching Simulation Auto-Stop (SID 853) in the .slx. Adjust to
+# widen or narrow the envelope for a particular exercise.
+#
+# In the GUI, auto-stop FREEZES the sim rather than ending it, so you can press
+# Restart and fly again. Headless it ends the run, as Simulink does.
+hdot_limit = 5000.0       # |Hdot| [m/s] - on the raw signal, not ft/min
+alpha_deg_limit = 20.0    # |alpha| [deg] - the stall guard
+speed_kts_max = 140.0     # |U| [kts]
+speed_kts_min = 40.0      # |U| [kts]
+pqr_norm_limit = 1000.0   # |pqr| [rad/s]
 # The model's altitude test is `abs(alt_ft) < 0`, which can never be true, so a
 # crash never stops it. Set true to use the evidently-intended `alt_ft < 0`.
 fix_altitude_test = false

@@ -191,3 +191,57 @@ def test_realtime_loop_runs_and_keeps_time():
     assert d["steps"] > 150
     assert 0.95 < d["real_time_factor"] < 1.05
     assert d["overrun_pct"] < 10.0
+
+
+# --- restart, including after auto-stop ----------------------------------
+def test_restart_resets_state_and_keeps_derivative_edits():
+    m = FlightModel(autopilot=AutopilotConfig(False, False),
+                    autostop=AutoStopConfig(enabled=False))
+    loop = RealTimeLoop(m, ScriptedJoystick(replay.profile),
+                        LoopConfig(rate_hz=200.0, high_priority=False))
+    edited = m.p.aero.Cm_q * 0.5
+    loop.set_parameter("aero.Cm_q", edited)
+    loop.start()
+    time.sleep(1.2)
+    t_before = loop.sim_time
+    loop.restart()
+    time.sleep(0.6)
+    t_after = loop.sim_time
+    loop.stop("test over")
+    loop.join(3.0)
+
+    assert t_before > 0.5
+    assert t_after < t_before, "sim time did not reset"
+    assert m.p.aero.Cm_q == edited, "derivative edit was lost on restart"
+    # the tuning log must be re-stamped at t=0, or it carries pre-restart times
+    assert all(e["t"] == 0.0 for e in loop.tuning_log.entries)
+
+
+def test_autostop_halts_but_leaves_the_loop_alive_so_restart_works():
+    """Regression: auto-stop used to call stop(), which tore the loop down.
+
+    The Restart button then did nothing - precisely when you most want it,
+    after a stall. Auto-stop must FREEZE and keep servicing commands.
+    """
+    m = FlightModel(autopilot=AutopilotConfig(False, False),
+                    autostop=AutoStopConfig(enabled=True))
+    loop = RealTimeLoop(m, ScriptedJoystick(lambda t: PilotCommands(0, 1.0, 0, 0.0)),
+                        LoopConfig(rate_hz=200.0, high_priority=False))
+    loop.start()
+    for _ in range(200):                       # wait for auto-stop to fire
+        if loop.halted:
+            break
+        time.sleep(0.05)
+
+    assert loop.halted, "auto-stop never fired"
+    assert loop.running, "loop died on auto-stop - restart cannot work"
+    t_halt = loop.sim_time
+    time.sleep(0.3)
+    assert abs(loop.sim_time - t_halt) < 1e-6, "sim time advanced while halted"
+
+    loop.restart()
+    time.sleep(0.4)
+    assert not loop.halted, "restart did not clear the halt"
+    assert loop.sim_time > 0.0 and loop.sim_time < t_halt, "did not re-fly"
+    loop.stop("test over")
+    loop.join(3.0)

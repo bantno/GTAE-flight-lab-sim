@@ -46,7 +46,7 @@ FIELDS: tuple[str, ...] = (
 STATUS: tuple[str, ...] = (
     "running", "paused", "steps", "overruns", "late_p99_us",
     "real_time_factor", "sim_time", "autostop", "joystick_warning",
-    "param_changes", "restarts",
+    "param_changes", "restarts", "halted",
 )
 ALL_FIELDS = FIELDS + STATUS
 IDX = {name: i for i, name in enumerate(ALL_FIELDS)}
@@ -120,6 +120,7 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
         buf[IDX["overruns"]] = st.overruns
         buf[IDX["sim_time"]] = loop_ref.sim_time
         buf[IDX["autostop"]] = 1.0 if out.autostop else 0.0
+        buf[IDX["halted"]] = 1.0 if loop_ref.halted else 0.0
         buf[IDX["joystick_warning"]] = float(
             len(getattr(source, "watchdog", None).warnings)
             if getattr(source, "watchdog", None) else 0)
@@ -162,6 +163,8 @@ def _child_main(cfg: dict, args_dict: dict, shared, seq, cmd_q, res_q) -> None:
                     loop_ref.restart()
                     buf[IDX["param_changes"]] = len(loop_ref.tuning_log)
                     buf[IDX["restarts"]] = buf[IDX["restarts"]] + 1.0
+                    buf[IDX["halted"]] = 0.0
+                    buf[IDX["autostop"]] = 0.0
                 elif cmd == "stop":
                     loop_ref.stop(str(val))
         except queue.Empty:
@@ -307,6 +310,13 @@ class PhysicsProcess:
     @property
     def restarts(self) -> int:
         return int(self._view[IDX["restarts"]])
+
+    @property
+    def halted(self) -> bool:
+        """True when auto-stop has frozen the sim. The loop is still alive and
+        will accept a restart - that is the whole point of halting rather than
+        stopping."""
+        return bool(self._view[IDX["halted"]])
 
     @property
     def param_changes(self) -> int:

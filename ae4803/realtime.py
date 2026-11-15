@@ -220,6 +220,12 @@ class RealTimeLoop:
         self.sim_time = 0.0
         self.paused = False
         self.stop_reason = ""
+        #: Auto-stop FREEZES the sim rather than tearing the loop down, so the
+        #: loop keeps servicing commands and Restart still works. Tearing down
+        #: on auto-stop left nothing alive to receive a restart - the button
+        #: did nothing after a stall, which is exactly when you want it.
+        self.halted = False
+        self.halt_reason = ""
 
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -235,6 +241,11 @@ class RealTimeLoop:
         self._thread = threading.Thread(target=self._run, name="ae4803-physics",
                                         daemon=True)
         self._thread.start()
+
+    def halt(self, reason: str) -> None:
+        """Freeze the sim but keep the loop alive and responsive."""
+        self.halted = True
+        self.halt_reason = reason
 
     def stop(self, reason: str = "stopped by user") -> None:
         if not self.stop_reason:
@@ -280,6 +291,8 @@ class RealTimeLoop:
         self.state = self.model.reset()
         self.sim_time = 0.0
         self.stop_reason = ""
+        self.halted = False
+        self.halt_reason = ""
         self.stats = TimingStats(rate_hz=self.cfg.rate_hz)
         self.stats.wall_start = time.perf_counter()
 
@@ -345,7 +358,7 @@ class RealTimeLoop:
                 if self.on_poll is not None:
                     self.on_poll(self)
 
-                if self.paused:
+                if self.paused or self.halted:
                     next_deadline = begin + h
                     continue
 
@@ -369,8 +382,8 @@ class RealTimeLoop:
                 if self.on_step is not None:
                     self.on_step(out)
 
-                if out.autostop:
-                    self.stop(f"auto-stop: {out.autostop_reason}")
+                if out.autostop and not self.halted:
+                    self.halt(f"auto-stop: {out.autostop_reason}")
 
                 end = time.perf_counter()
                 self.stats.record(end - begin, lateness)

@@ -70,6 +70,11 @@ def build(cfg: dict, args) -> tuple:
         autostop=AutoStopConfig(
             enabled=bool(st.get("enabled", True)) and not getattr(args, "no_autostop", False),
             fix_altitude_test=bool(st.get("fix_altitude_test", False)),
+            hdot_limit=float(st.get("hdot_limit", 5000.0)),
+            alpha_deg_limit=float(st.get("alpha_deg_limit", 20.0)),
+            speed_kts_max=float(st.get("speed_kts_max", 140.0)),
+            speed_kts_min=float(st.get("speed_kts_min", 40.0)),
+            pqr_norm_limit=float(st.get("pqr_norm_limit", 1000.0)),
         ),
         wind=WindModel(turbulence_on=bool(wd.get("turbulence", False)),
                        W20=float(wd.get("W20", 5.0)),
@@ -254,6 +259,12 @@ def main() -> int:
             while loop.running:
                 if args.duration and loop.sim_time >= args.duration:
                     loop.stop(f"reached --duration {args.duration} s")
+                    break
+                if loop.halted:
+                    # Auto-stop freezes the loop so the GUI's Restart button has
+                    # something alive to talk to. Headless there is nobody to
+                    # press it, so end the run - which is what Simulink does.
+                    loop.stop(loop.halt_reason)
                     break
                 time.sleep(0.1)
         except KeyboardInterrupt:

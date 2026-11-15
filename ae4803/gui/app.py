@@ -399,10 +399,15 @@ class MainWindow(QMainWindow):
             self.r_over.set(f"{d['overruns']:8d}",
                             RED if d["overruns"] else GREEN)
             self.r_late.set(f"{d['late_p99_us']:8.1f}")
-        self.r_state.set("PAUSED" if self.loop.paused else
-                         ("RUNNING" if self.loop.running else "STOPPED"),
-                         AMBER if self.loop.paused else
-                         (GREEN if self.loop.running else RED))
+        halted = bool(getattr(self.loop, "halted", False))
+        if halted:
+            self.r_state.set("AUTO-STOP", RED)
+        elif self.loop.paused:
+            self.r_state.set("PAUSED", AMBER)
+        elif self.loop.running:
+            self.r_state.set("RUNNING", GREEN)
+        else:
+            self.r_state.set("STOPPED", RED)
 
         # History ring buffer (cheap: scalar stores, no allocation).
         # Only append when sim time has actually ADVANCED. Once the loop stops -
@@ -443,7 +448,11 @@ class MainWindow(QMainWindow):
             n = int(o.joystick_warning)
             msgs.append(f"{n} joystick stale-axis warning(s) - an axis has "
                         f"stopped updating. Full text is printed on exit.")
-        if o.autostop:
+        if halted:
+            msgs.append("AUTO-STOP - the sim is frozen. Press Restart to fly "
+                        "again, or untick Auto-stop first to explore outside "
+                        "the model's limits.")
+        elif o.autostop:
             msgs.append("AUTO-STOP triggered")
         if not self.loop.running and self.loop.stop_reason:
             msgs.append(self.loop.stop_reason)
