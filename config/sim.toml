@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# AE4803 PySim - simulation configuration
+# ---------------------------------------------------------------------------
+
+[solver]
+# Fixed-step RK4, paced against the wall clock. The Simulink model used a
+# variable-step ode23 at RelTol 1e-2 with simulation pacing at 1x; a fixed step
+# is what makes the timing predictable and measurable.
+# 200 Hz uses ~19% of the step budget on this machine; 100 Hz uses ~10%.
+rate_hz = 200.0
+# Steps of accumulated lag to work off before resyncing the clock, so a
+# transient hiccup cannot turn into permanent lag.
+max_catchup_steps = 5
+# Per-user Windows timing tweaks. Neither needs administrator rights, and the
+# sim runs correctly if either is refused.
+high_priority = true
+timer_resolution_ms = 1
+
+[model]
+# "simulink" = bug-for-bug compatible with AE4803Sim.slx (default, so results
+#              stay comparable with the Simulink lab).
+# "physical" = use a valid symmetric inertia tensor. The .slx mask holds a
+#              NON-symmetric matrix, which is not a physically possible inertia
+#              tensor and does not conserve rotational kinetic energy.
+#              See docs/MODEL_NOTES.md.
+inertia_mode = "simulink"
+
+[autopilot]
+# Both default off, matching wingLevelerOn / altitudeHoldOn in sim_init.mat.
+# Toggle them live from the GUI.
+wing_leveler = false
+altitude_hold = false
+# "capture"         - latch the altitude reference when the hold is engaged.
+# "simulink_memory" - reproduce the Memory block's 0 initial condition, which
+#                     makes the reference 0 ft if the hold is on at t = 0.
+altitude_ref_mode = "capture"
+
+[autostop]
+enabled = true
+# The model's altitude test is `abs(alt_ft) < 0`, which can never be true, so a
+# crash never stops it. Set true to use the evidently-intended `alt_ft < 0`.
+fix_altitude_test = false
+
+[xplane]
+enabled = true
+ip = "127.0.0.1"
+port = 49000
+# "vehx"          - what AE4803Sim.slx actually sends (VEHX + DREF on 49000).
+# "legacy_string" - the older "phi theta psi lat lon alt" string for the
+#                   UWTimedProcessingUDP.xpl plugin; set port = 49003 with this.
+protocol = "vehx"
+send_datarefs = true
+rate_hz = 30.0
+legacy_digits = 10
+
+[logging]
+enabled = true
+directory = "flightlogs"
+# Record every Nth physics step. At 200 Hz, 4 gives 50 Hz logs - plenty for
+# post-processing and keeps the .mat to a sensible size.
+decimate = 4
+# Also copy the sim_init.mat parameters into the log, as the StopFcn did.
+include_parameters = true
+
+[wind]
+# AE4803Sim has turbulence switched OFF (Dryden T_on = off, wind shear W_20 = 0,
+# all gust axes off), so the wind is identically zero. Enable for an experiment.
+turbulence = false
+W20 = 5.0
+seed = 23341
