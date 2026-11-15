@@ -38,6 +38,18 @@ def load_config(path: Path = CONFIG) -> dict:
         return tomllib.load(fh)
 
 
+def inertia_note(mode: str) -> str:
+    """One line at startup, because this is the one place the sim knowingly
+    disagrees with AE4803Sim.slx and nobody should discover that by surprise."""
+    if mode == "simulink":
+        return ("        reproducing the .slx inertia exactly, INCLUDING its "
+                "asymmetric (non-physical) tensor")
+    sign = "-Jxz" if mode in ("symmetric_neg", "physical") else "+Jxz"
+    return (f"        symmetric inertia ({sign} both slots); differs from "
+            f"AE4803Sim.slx by ~1% in roll/yaw/sideslip, by design\n"
+            f"        (sign unconfirmed - see docs/MODEL_NOTES.md 2.1)")
+
+
 def build(cfg: dict, args) -> tuple:
     s = cfg.get("solver", {})
     m = cfg.get("model", {})
@@ -176,6 +188,7 @@ def main() -> int:
         from ae4803.procsim import PhysicsProcess
 
         print(f"solver: fixed-step RK4 at {rate:g} Hz, inertia_mode = {inertia}")
+        print(inertia_note(inertia))
         print("physics: separate process (use --threaded to run it on a thread)")
         print()
 
@@ -230,6 +243,7 @@ def main() -> int:
 
     print(f"solver: fixed-step RK4 at {loop.cfg.rate_hz:g} Hz, "
           f"inertia_mode = {inertia}")
+    print(inertia_note(inertia))
     print()
 
     if args.no_gui:

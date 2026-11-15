@@ -68,6 +68,19 @@ def test_inertia_simulink_is_transpose_of_mask():
     assert np.allclose(INERTIA_SIMULINK, INERTIA_AS_IN_MASK.T)
 
 
+def test_default_inertia_is_symmetric(params):
+    """The shipped default must be a realizable inertia tensor.
+
+    The sim deliberately no longer matches AE4803Sim.slx here; anything
+    comparing against Simulink has to ask for inertia_mode="simulink".
+    """
+    I = params.geom.inertia
+    assert np.allclose(I, I.T), "default inertia must be symmetric"
+    assert np.all(np.linalg.eigvals(I) > 0)
+    sim = Params.load(inertia_mode="simulink").geom.inertia
+    assert not np.allclose(sim, sim.T), "simulink mode must stay bug-for-bug"
+
+
 def test_physical_inertia_is_symmetric_and_the_mask_is_not():
     assert np.allclose(INERTIA_PHYSICAL, INERTIA_PHYSICAL.T)
     assert not np.allclose(INERTIA_AS_IN_MASK, INERTIA_AS_IN_MASK.T)

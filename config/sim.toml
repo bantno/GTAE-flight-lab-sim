@@ -17,13 +17,30 @@ high_priority = true
 timer_resolution_ms = 1
 
 [model]
-# "simulink" = bug-for-bug compatible with AE4803Sim.slx (default, so results
-#              stay comparable with the Simulink lab).
-# "physical" = use a valid symmetric inertia tensor. The .slx mask holds a
-#              NON-symmetric matrix, which is not a physically possible inertia
-#              tensor and does not conserve rotational kinetic energy.
-#              See docs/MODEL_NOTES.md.
-inertia_mode = "simulink"
+# Inertia tensor to integrate with.
+#
+#   "symmetric_neg"  DEFAULT. -Jxz in both off-diagonal slots. A physically
+#                    realizable tensor.
+#   "symmetric_pos"  +Jxz in both slots. Also realizable; differs from
+#                    symmetric_neg by ~2 % of signal scale in the lateral
+#                    states. The sign is NOT confirmed - see below.
+#   "simulink"       Bug-for-bug with AE4803Sim.slx, whose mask holds an
+#                    ASYMMETRIC matrix (+117.64 at (1,3), -117.64 at (3,1)).
+#                    That is not a possible inertia tensor, and no rigid body
+#                    reproduces the dynamics it produces. Use this - and only
+#                    this - when comparing against the Simulink model.
+#
+# NOTE, and it matters: with the default the Python sim no longer matches
+# AE4803Sim.slx exactly. It differs by roughly 1 % of signal scale in roll,
+# yaw and sideslip, deliberately, because the .slx is integrating an impossible
+# rigid body. tools/replay_compare.py and tools/convergence_check.py pin
+# themselves to "simulink" so the port is still validated honestly.
+#
+# The SIGN of the symmetric value is unconfirmed. symmetric_neg follows the FDC
+# moment-equation convention, but that reading has not been checked against
+# Rauw's thesis, and the sign is worth ~2 % - more than the asymmetry it fixes.
+# Full evidence in docs/MODEL_NOTES.md section 2.1.
+inertia_mode = "symmetric_neg"
 
 [autopilot]
 # Both default off, matching wingLevelerOn / altitudeHoldOn in sim_init.mat.

@@ -71,14 +71,29 @@ INERTIA_SYMMETRIC_POS = np.array([[5.787969e3, 0.0, 1.1764e2],
 #: Backwards-compatible alias. Prefer the explicit names above.
 INERTIA_PHYSICAL = INERTIA_SYMMETRIC_NEG
 
-#: Default: reproduce the lab model, so Python and Simulink stay comparable.
 INERTIA_MODES = {
     "simulink": INERTIA_SIMULINK,              # bug-for-bug with AE4803Sim
     "symmetric_neg": INERTIA_SYMMETRIC_NEG,    # -Jxz in both slots
     "symmetric_pos": INERTIA_SYMMETRIC_POS,    # +Jxz in both slots
     "physical": INERTIA_SYMMETRIC_NEG,         # alias for symmetric_neg
 }
-INERTIA = INERTIA_SIMULINK
+
+#: DEFAULT: a symmetric (physically realizable) tensor.
+#:
+#: Chosen deliberately, 2026-11-15, over bug-for-bug compatibility: a teaching
+#: simulator should not integrate an impossible rigid body. The cost is that
+#: Python and AE4803Sim.slx now disagree by ~1 % of signal scale in the lateral
+#: states, BY DESIGN. Anything validating the port against Simulink must pass
+#: inertia_mode="simulink" explicitly, or it will measure this deliberate
+#: divergence instead of the fidelity of the port - tools/replay_compare.py and
+#: tools/convergence_check.py do exactly that.
+#:
+#: The SIGN remains unconfirmed (see docs/MODEL_NOTES.md §2.1). symmetric_neg
+#: follows the FDC moment-equation convention, but that reading has not been
+#: checked against the thesis. Switching to symmetric_pos is a one-word change
+#: and moves the answer by ~2 % - more than the asymmetry this fixes.
+DEFAULT_INERTIA_MODE = "symmetric_neg"
+INERTIA = INERTIA_MODES[DEFAULT_INERTIA_MODE]
 
 
 def load_raw(path: str | Path = DEFAULT_INIT_MAT) -> dict:
@@ -171,11 +186,12 @@ class Params:
 
     @classmethod
     def load(cls, path: str | Path = DEFAULT_INIT_MAT,
-             inertia_mode: str = "simulink") -> "Params":
+             inertia_mode: str = DEFAULT_INERTIA_MODE) -> "Params":
         """Load parameters.
 
-        ``inertia_mode`` is "simulink" (default - bug-for-bug compatible with
-        AE4803Sim) or "physical" (a valid symmetric inertia tensor).
+        ``inertia_mode`` defaults to "symmetric_neg" - a valid inertia tensor.
+        Pass "simulink" to reproduce AE4803Sim.slx bug-for-bug, which is what
+        any comparison against the Simulink model must use.
         """
         d = load_raw(path)
         if inertia_mode not in INERTIA_MODES:

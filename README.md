@@ -250,20 +250,40 @@ docs/             MODEL_NOTES.md — what the .slx actually does
 
 ---
 
-## Known issues in the original model
+## ⚠ This sim deliberately differs from `AE4803Sim.slx` in one place
 
-Reproduced bug-for-bug by default so results stay comparable, each with a
-config switch to correct it. Full detail and evidence in `docs/MODEL_NOTES.md`.
+**The inertia tensor.** The `.slx` mask holds an *asymmetric* matrix —
+`+117.64` at (1,3), `−117.64` at (3,1). No rigid body has an asymmetric inertia
+tensor (`I_ij = I_ji` identically), no sign convention can produce one, and the
+6DOF block neither repairs it nor ignores it. This sim therefore defaults to a
+**symmetric** tensor instead.
 
-1. **The inertia matrix is not a valid inertia tensor** — it is not symmetric,
-   and integrating with it does not conserve rotational kinetic energy
-   (5 × 10⁻³ relative drift over 200 s of torque-free tumbling, against machine
-   precision for a symmetric tensor). `inertia_mode = "physical"` fixes it;
-   expect ~2 % difference in the lateral states.
-2. **The 6DOF block uses the transpose of the mask inertia matrix** — invisible
-   for any proper symmetric inertia, visible here because the mask is
-   asymmetric. Matched by default.
-3. **The auto-stop altitude test `abs(alt_ft) < 0` can never fire**, so flying
+The cost: **Python and the Simulink model now disagree by about 1 % of signal
+scale in roll, yaw and sideslip.** That is intended. If students compare the
+two, tell them why.
+
+* To reproduce the Simulink model exactly: `inertia_mode = "simulink"` in
+  `config/sim.toml`.
+* Anything validating the port against Simulink **must** use that mode.
+  `tools/replay_compare.py` and `tools/convergence_check.py` already do, and
+  still report 0.56 % worst error.
+* The *sign* of the symmetric value is **not confirmed** — `symmetric_neg`
+  follows the FDC moment-equation convention, but that has not been checked
+  against Rauw's thesis, and the sign is worth ~2 %, i.e. more than the
+  asymmetry it fixes. If the thesis disagrees, switch to `symmetric_pos`.
+
+The bug is **upstream, not the lab's**: MathWorks' own Aerospace Blockset ships
+the same matrix in `astDehavillandBeaver.m`, and pasted it verbatim into the
+unrelated fictional `astSkyHogg.m`. Full evidence in `docs/MODEL_NOTES.md` §2.1.
+
+## Other known issues in the original model
+
+Reproduced bug-for-bug by default, each with a config switch to correct it.
+
+1. **The 6DOF block uses the transpose of the mask inertia matrix** — invisible
+   for any proper symmetric inertia, visible there because the mask is
+   asymmetric. Only relevant in `inertia_mode = "simulink"`.
+2. **The auto-stop altitude test `abs(alt_ft) < 0` can never fire**, so flying
    into the ground never stops the sim. `fix_altitude_test = true` corrects it.
-4. The actuator state-space models in `sim_init.mat` are **not in the signal
+3. The actuator state-space models in `sim_init.mat` are **not in the signal
    path** — the `Actuators` subsystem is a pass-through.

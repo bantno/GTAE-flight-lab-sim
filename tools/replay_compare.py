@@ -16,7 +16,8 @@ import numpy as np
 import scipy.io as sio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ae4803 import FlightModel, AutopilotConfig, AutoStopConfig, replay  # noqa: E402
+from ae4803 import (FlightModel, AutopilotConfig, AutoStopConfig,  # noqa: E402
+                    Params, replay)
 
 REPO = Path(__file__).resolve().parent.parent
 REF = REPO / "matlab" / "reference" / "ref_run.mat"
@@ -62,6 +63,12 @@ SCALE = {
 
 def run_python(t_end: float, rate_hz: float):
     model = FlightModel(
+        # Pinned to "simulink" ON PURPOSE. The sim's DEFAULT inertia is now a
+        # symmetric (realizable) tensor, which deliberately differs from
+        # AE4803Sim.slx by ~1 % in the lateral states. Comparing with the
+        # default would measure that intended divergence instead of the
+        # fidelity of the port. See docs/MODEL_NOTES.md section 2.1.
+        params=Params.load(inertia_mode="simulink"),
         autopilot=AutopilotConfig(wing_leveler_on=False, altitude_hold_on=False),
         # The reference run completed 60 s, so auto-stop never fired; disable it
         # here too so a marginal threshold cannot truncate the comparison.

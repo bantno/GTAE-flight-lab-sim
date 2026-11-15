@@ -171,14 +171,29 @@ than the asymmetry it is meant to repair. A symmetric tensor is therefore
 demonstrably **self-consistent**, but not demonstrably **closer to the real
 aircraft**, until the sign is confirmed from the FDC source.
 
-Selectable via `inertia_mode` in `config/sim.toml`: `"simulink"` (default,
-bug-for-bug), `"symmetric_neg"`, `"symmetric_pos"`; `"physical"` is an alias
-for `symmetric_neg`.
+### Decision taken, 2026-11-15
 
-**Recommendation:** keep `simulink` as the course default. It keeps Python and
-the `.slx` comparable, and the discrepancy makes a good teaching point. Do not
-switch to a symmetric tensor on the strength of this note alone — confirm the
-sign first.
+**The default is now `symmetric_neg`** — a realizable tensor. Changed on the
+course owner's instruction, with the sign still unconfirmed, on the reasoning
+that a teaching simulator should not integrate an impossible rigid body even if
+the exact product of inertia is uncertain.
+
+Consequences, stated plainly:
+
+* **The Python sim no longer matches `AE4803Sim.slx` exactly.** It differs by
+  roughly 1 % of signal scale in roll, yaw and sideslip. That divergence is
+  deliberate. Students who compare the two will see it, and should be told why.
+* **Anything validating the port must pass `inertia_mode="simulink"`**, or it
+  measures this intended divergence instead of the fidelity of the port.
+  `tools/replay_compare.py` and `tools/convergence_check.py` pin themselves to
+  `"simulink"` for exactly this reason, and still report 0.56 % worst error.
+* **The sign is a coin-flip worth ~2 %.** `symmetric_neg` follows the FDC
+  moment-equation convention, but that reading has not been checked against
+  Rauw's thesis. If the thesis says otherwise, switch `inertia_mode` to
+  `symmetric_pos`; nothing else needs to change.
+
+Modes available in `config/sim.toml`: `"symmetric_neg"` (default),
+`"symmetric_pos"`, `"simulink"`; `"physical"` is an alias for `symmetric_neg`.
 
 (An earlier version of this note claimed `Ixx` and `Izz` were "each exactly
 419.579 kg·m² larger than the published FDC values". **That was wrong** — it
