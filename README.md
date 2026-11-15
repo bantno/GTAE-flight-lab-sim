@@ -17,22 +17,70 @@ repo never writes to the lab folder.
 
 ---
 
-## Quick start
+## For students: running the simulator
+
+### Every session — three steps
+
+1. **Close TARGET completely.** Check the system tray; it is not enough to
+   close the window. While TARGET runs it hides the stick, throttle and pedals
+   behind one virtual controller and the sim will see nothing.
+2. **Start X-Plane** and load an aircraft (not sitting at the menu).
+3. **Double-click `run.bat`.**
+
+That is the whole procedure. `run.bat` finds the Python environment, runs a
+pre-flight check, and starts the sim. Close the window when you are done — the
+timing statistics print to the console and your flight log is written to
+`flightlogs\mmddyy_HHMMSS.mat`.
+
+If anything is wrong, pre-flight says so in plain language before the sim
+starts, e.g. *"TARGET is RUNNING"* or *"joystick: 1 control unbound"*. You can
+run it on its own at any time:
 
 ```bat
-cd "%USERPROFILE%\OneDrive - Georgia Institute of Technology\Desktop\FLIGHT-SIM\AE4803 PySim"
-
-REM 1. Close TARGET completely.
-REM 2. Check the sim can see the hardware:
-"%USERPROFILE%\.venvs\ae4803sim\python.exe" tools\list_devices.py
-
-REM 3. Fly:
-"%USERPROFILE%\.venvs\ae4803sim\python.exe" run_sim.py
+python tools\preflight.py
 ```
 
-`run_sim.py` opens the gauge window, starts the physics process, reads the
-joystick and streams to X-Plane. Closing the window stops the sim, prints the
-timing statistics and writes a flight log.
+### First time on a given Windows account — one extra step
+
+Run **`setup.bat`** once. It builds a private Python environment under your own
+user profile and installs the packages. It needs **no administrator rights**,
+installs nothing system-wide, and takes a couple of minutes.
+
+> **Important:** the environment lives in *your* user profile
+> (`%USERPROFILE%\.venvs\ae4803sim`), so it is per-Windows-account. If the lab
+> machine is shared under one login, setup has already been done and students
+> only ever touch `run.bat`. If students log in with their own accounts, each
+> one runs `setup.bat` once. They also each need their own copy of this folder,
+> because the current one lives in a personal OneDrive.
+
+### In the sim
+
+| control | what it does |
+|---|---|
+| stick left/right | roll |
+| stick fore/aft | pitch |
+| rudder pedals | yaw |
+| right throttle lever | throttle — start around **60 %** for 45 m/s |
+| **Wing leveler** checkbox | holds wings level and ball centred |
+| **Altitude hold** checkbox | captures the current altitude and holds it |
+| **Auto-stop** checkbox | the model's own limits; untick to explore outside them |
+| **Pause** | freezes the sim; needed to edit derivatives |
+| **Derivatives** tab | change stability derivatives, paused, mid-flight |
+
+Keep the airspeed needle in the **green band** (35–55 m/s). That is where the
+Beaver coefficient set is a good fit; outside it you are extrapolating, and the
+model's auto-stop fires below 40 kts or above 140 kts.
+
+### If something goes wrong
+
+| symptom | fix |
+|---|---|
+| "No Python environment found" | run `setup.bat` once |
+| "TARGET is RUNNING" | close it from the system tray |
+| A control does nothing | `python tools\check_mapping.py`, move everything, see which reads 0 |
+| No devices at all | `python tools\list_devices.py` — almost always TARGET still running |
+| Aircraft does not move in X-Plane | check X-Plane has an aircraft loaded and is accepting UDP on 49000 |
+| Sim stops by itself | auto-stop fired — usually a stall. The console prints the reason |
 
 ### Options
 
