@@ -18,6 +18,13 @@ flightlogs/*.csv
 matlab/reference/*.mat
 compare_out/
 
+# Third-party reference documents (Rauw's FDC reports etc). Kept locally for
+# checking the Beaver's inertia convention, NOT redistributed - this repo is
+# public and they are someone else's copyright.
+docs/reference/*.pdf
+docs/reference/*.ps
+docs/reference/*.zip
+
 # OS / editor
 Thumbs.db
 desktop.ini

@@ -42,19 +42,24 @@ The two `Ixz` entries have **opposite signs**, so the matrix is not symmetric.
 An inertia tensor `I = ∫(r²δ − rr)dm` is symmetric by construction, so this is
 not a physically possible rigid body.
 
-It is not cosmetic. Integrating torque-free rotation `ω̇ = I⁻¹(−ω×Iω)` from
-`ω₀ = [0.3, 0.2, 0.1]` rad/s for 200 s:
+It is not cosmetic. As an illustration, integrating torque-free rotation
+`ω̇ = I⁻¹(−ω×Iω)` from `ω₀ = [0.3, 0.2, 0.1]` rad/s for 200 s:
 
-| matrix | symmetric? | rotational KE drift | ‖L‖ drift |
+| matrix | symmetric? | drift in ½ωᵀIω | ‖L‖ drift |
 |---|---|---|---|
 | mask as typed, `A` | no | **5.0 × 10⁻³** | 2.8 × 10⁻¹⁴ |
 | what the block uses, `Aᵀ` | no | **8.6 × 10⁻⁴** | 3.2 × 10⁻¹⁴ |
 | symmetric, −Ixz | yes | 6.6 × 10⁻¹⁴ | 3.4 × 10⁻¹⁴ |
 | symmetric, +Ixz | yes | 6.6 × 10⁻¹⁴ | 3.1 × 10⁻¹⁴ |
 
-Angular momentum is conserved either way (that is automatic for this equation),
-but **rotational kinetic energy is not** — the model is quietly doing work on
-itself. Reproduce with `pytest -k conserve`.
+Angular momentum is conserved either way (automatic for this equation), while
+the quantity that *would* be the rotational kinetic energy of a rigid body is
+not. Reproduce with `pytest -k conserve`.
+
+Treat that table as illustrative rather than probative: it shows one particular
+quantity is not conserved, which does not by itself exclude some *other*
+conserved energy. The decisive argument is the algebraic one two sections
+below — no rigid body, with any inertia, reproduces these dynamics.
 
 Note also that the *symmetric part* of the mask matrix is exactly
 `diag(Ixx, Iyy, Izz)` — the two `Ixz` entries cancel — so all of the roll/yaw
@@ -88,6 +93,51 @@ reproduces these rotational dynamics.** That is a proof, not an observation.
 (An earlier draft argued from rotational-KE drift. That showed one particular
 quantity is not conserved; it did not rule out some *other* conserved energy.
 The algebraic argument above is the rigorous one.)
+
+### Where it came from: upstream, not the lab
+
+The lab did not typo this. MathWorks' own Aerospace Blockset ships the same
+matrix. In `toolbox/aero/astdemos/astDehavillandBeaver.m` (R2024a):
+
+```matlab
+state.Inertia.Variables = [     % Moment of Inertia [kg*m^2]
+                 5788.0     0.0   117.6;
+                    0.0  6928.9     0.0;
+                 -117.6     0.0 11578.3;
+                          ];
+```
+
+Same asymmetry, same sign pattern, and every other Beaver number matches the
+lab's: mass 2288.231, S 23.23, b 14.63, c 1.5875. That file cites Rauw's Delft
+MSc thesis as its sole reference.
+
+**And it is demonstrably copy-paste rather than a house convention.** The same
+folder contains `astSkyHogg.m` — a *fictional* aircraft from an AIAA student
+design competition, cited to an entirely different reference, with a different
+mass (1299.214 kg) and a different reference area (20.9775 m²). Its inertia:
+
+```matlab
+state.Inertia{:,:} = [5787.969 0 117.64;0 6928.93 0;-117.64 0 11578.329];
+```
+
+That is the Beaver's tensor to the last decimal — and it is exactly, digit for
+digit, the matrix in `AE4803Sim.slx`. Somebody pasted the Beaver's inertia into
+an unrelated aeroplane, updated the mass, and left the inertia alone. A
+convention does not propagate like that; a copied constant does.
+
+For contrast, `astC182.m` in the same folder is `diag(948, 1346, 1967)` —
+symmetric, zero products of inertia. So there is no house style of asymmetry.
+
+Two further checks, both negative:
+
+* `Aero.FixedWing.State` does **not** validate or symmetrise. Assigning
+  `[100 0 7; 0 200 0; -7 0 300]` reads back unchanged, with no warning.
+* The property help reads only "Inertial matrix of aircraft" — no convention is
+  documented that could make an asymmetric entry meaningful.
+
+What remains genuinely unknown is whether Rauw's thesis prints it correctly, i.e.
+whether MathWorks introduced the sign flip or inherited it. That needs the
+thesis — see `docs/reference/README.md`.
 
 ### What is NOT established: the sign
 
@@ -130,9 +180,11 @@ the `.slx` comparable, and the discrepancy makes a good teaching point. Do not
 switch to a symmetric tensor on the strength of this note alone — confirm the
 sign first.
 
-(Aside: `Iyy` and `Jxz` match the published FDC Beaver exactly, and so does the
-mass, 2288.231 kg. `Ixx` and `Izz` are each exactly 419.579 kg·m² larger than
-the published values — a deliberate change by someone, not a typo.)
+(An earlier version of this note claimed `Ixx` and `Izz` were "each exactly
+419.579 kg·m² larger than the published FDC values". **That was wrong** — it
+rested on half-remembered figures rather than a source. MathWorks, citing Rauw
+directly, uses the same `Ixx`/`Izz` the lab does. There is no evidence anyone
+modified them. Retracted.)
 
 ### 2.2 The 6DOF block uses the **transpose** of the mask matrix
 
