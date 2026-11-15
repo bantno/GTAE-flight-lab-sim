@@ -2,7 +2,12 @@
 # no driver, no admin rights required.
 numpy>=1.26
 scipy>=1.11
-pygame>=2.5
+# pygame-ce, NOT upstream pygame. They are drop-in compatible (both `import
+# pygame`), but upstream pygame 2.6.1 bundles SDL 2.28.4, and SDL 2.28.4 does
+# not enumerate the lab's T-Pendular-Rudder pedals at all - they are simply
+# absent from the device list. pygame-ce 2.5.8 bundles SDL 2.32.10, which sees
+# them. Verified on this rig 2026-11-15.
+pygame-ce>=2.5.8
 PyQt6>=6.6
 pyqtgraph>=0.13
 h5py>=3.10        # only needed to read MATLAB v7.3 (-v7.3) log files

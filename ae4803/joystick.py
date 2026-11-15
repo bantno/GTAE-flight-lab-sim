@@ -20,6 +20,7 @@ TARGET must be CLOSED: while it runs it hides the physical devices.
 """
 from __future__ import annotations
 
+import os
 import time
 import tomllib
 from dataclasses import dataclass, field
@@ -65,8 +66,8 @@ class AxisSpec:
 class StaleCheckConfig:
     enabled: bool = True
     motion_threshold: float = 0.002
-    freeze_seconds: float = 5.0
-    repeat_warning_seconds: float = 30.0
+    freeze_seconds: float = 25.0
+    repeat_warning_seconds: float = 60.0
 
 
 @dataclass
@@ -112,10 +113,19 @@ class JoystickConfig:
 
 
 class StaleAxisWatchdog:
-    """Flags an axis that has not changed AT ALL while others are moving.
+    """Flags a control that appears to have stopped reporting.
 
-    A real axis always dithers by a count or two; one that is bit-for-bit
-    constant while the pilot is working other controls has stopped updating.
+    A live axis always dithers by a count or two. One that is bit-for-bit
+    constant for a long stretch, while other axes are being worked, has
+    probably stopped updating - the historical TARGET throttle fault.
+
+    Two refinements stop it crying wolf, which matters because a false alarm
+    every flight trains people to ignore it:
+
+    * Only axes that have ALREADY moved this session are watched. A control
+      nobody has touched yet is not evidence of anything.
+    * A control parked deliberately (throttle set and left) is indistinguishable
+      from a dead one, so the freeze window is long rather than a few seconds.
     """
 
     def __init__(self, cfg: StaleCheckConfig):
@@ -123,6 +133,7 @@ class StaleAxisWatchdog:
         self._last: dict[str, float] = {}
         self._frozen_since: dict[str, float] = {}
         self._last_warned: dict[str, float] = {}
+        self._has_moved: set[str] = set()
         self.warnings: list[str] = []
 
     def update(self, values: dict[str, float], now: float) -> list[str]:
@@ -136,20 +147,24 @@ class StaleAxisWatchdog:
 
         for k, v in values.items():
             prev = self._last.get(k)
+            if moved[k]:
+                self._has_moved.add(k)
             if prev is None or v != prev:
                 self._frozen_since.pop(k, None)
-            elif any_moving and not moved[k]:
-                # exactly unchanged while something else moves
-                t0 = self._frozen_since.setdefault(k, now)
-                if now - t0 >= self.cfg.freeze_seconds:
-                    lw = self._last_warned.get(k, -1e9)
-                    if now - lw >= self.cfg.repeat_warning_seconds:
-                        self._last_warned[k] = now
-                        msg = (f"'{k}' has not changed for {now - t0:.1f} s while "
-                               f"other axes are moving - the axis may have stopped "
-                               f"updating (check the device, or close TARGET).")
-                        self.warnings.append(msg)
-                        new.append(msg)
+                continue
+            if not (any_moving and k in self._has_moved):
+                continue
+            # bit-for-bit unchanged, has worked before, something else is moving
+            t0 = self._frozen_since.setdefault(k, now)
+            if now - t0 >= self.cfg.freeze_seconds:
+                lw = self._last_warned.get(k, -1e9)
+                if now - lw >= self.cfg.repeat_warning_seconds:
+                    self._last_warned[k] = now
+                    msg = (f"'{k}' has been bit-for-bit frozen for {now - t0:.0f} s "
+                           f"while other axes move. If you have not simply parked "
+                           f"it, the axis has stopped reporting - check the device.")
+                    self.warnings.append(msg)
+                    new.append(msg)
         self._last = dict(values)
         return new
 
@@ -170,6 +185,9 @@ class JoystickReader:
 
     # --- device discovery -------------------------------------------------
     def _open(self) -> None:
+        # Let SDL deliver joystick input even when our window is not focused -
+        # the physics runs in a child process with no window of its own.
+        os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
         try:
             import pygame
         except ImportError:                                   # pragma: no cover
@@ -183,7 +201,10 @@ class JoystickReader:
         found = []
         for i in range(pygame.joystick.get_count()):
             js = pygame.joystick.Joystick(i)
-            js.init()
+            # Joystick.init() is deprecated in pygame-ce (objects self-initialise)
+            # but is still required by upstream pygame. Call it only if harmless.
+            if hasattr(js, "get_init") and not js.get_init():
+                js.init()
             found.append(js.get_name())
             self._sticks[js.get_name()] = js
 

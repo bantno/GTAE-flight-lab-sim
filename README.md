@@ -57,8 +57,9 @@ Already set up on this machine:
   with the existing per-user miniconda (`%LOCALAPPDATA%\miniconda3`).
   Python 3.14 is also installed but **pygame has no 3.14 wheel**, which is why
   the env is 3.12.
-* Packages, all prebuilt wheels: numpy, scipy, pygame (SDL 2.28.4), PyQt6,
-  pyqtgraph, h5py, matplotlib, pytest.
+* Packages, all prebuilt wheels: numpy, scipy, **pygame-ce** (SDL 2.32.10 —
+  see the pedals warning below; upstream pygame will NOT see the rudder),
+  PyQt6, pyqtgraph, h5py, matplotlib, pytest.
 * The venv lives **outside** this folder on purpose — it is ~20 000 files and
   OneDrive would sync every one of them.
 
@@ -91,19 +92,44 @@ requested.
 5. **Close the window.** Timing statistics print to the console and a log is
    written to `flightlogs\mmddyy_HHMMSS.mat`.
 
+### The mapping, as measured on this rig (2026-11-15, verified in flight)
+
+| control | device | axis | notes |
+|---|---|---|---|
+| roll | `Joystick - HOTAS Warthog` | 0 | full travel ±0.99 |
+| pitch | `Joystick - HOTAS Warthog` | 1 | full travel ±0.99 |
+| yaw | `T-Pendular-Rudder` | 2 | `invert = true`; axes 0/1 are the toe brakes, resting at +1.0 |
+| throttle | `Throttle - HOTAS Warthog` | 2 | right lever, `unipolar` |
+
+> ### ⚠ The rudder pedals require pygame-**ce**, not pygame
+>
+> The pedals on this rig are a **T-Pendular-Rudder** (TPR, `VID_044F&PID_B68F`),
+> not the TFRP named in the lab notes. Upstream `pygame` 2.6.1 bundles
+> **SDL 2.28.4, which does not enumerate this device at all** — it is simply
+> absent from `pygame.joystick.get_count()`, while Windows, `joy.cpl` and
+> Device Manager all show it as present and working. No SDL hint changes this
+> (`SDL_JOYSTICK_RAWINPUT`, `_HIDAPI`, `_WGI`, `_ALLOW_BACKGROUND_EVENTS` were
+> all tried).
+>
+> `pygame-ce` 2.5.8 bundles **SDL 2.32.10**, which sees it. The two packages are
+> drop-in compatible (both `import pygame`), so the only change is the
+> requirement. **Do not "fix" a dependency warning by installing upstream
+> pygame — the rudder will silently disappear.**
+
 ### If the axes look wrong
 
 ```bat
-python tools\calibrate_axes.py
+python tools\check_mapping.py      # shows the actual pilot commands, live
+python tools\calibrate_axes.py     # raw per-axis bars, if you need them
 ```
 
-Move one control at a time; the row that moves is that control's axis. Put the
-device name and axis number into `config\joystick.toml`. Matching is by name,
-so the binding survives a reboot.
+`check_mapping.py` is the better one: it shows what the model actually
+receives, after name matching, inversion, calibration and dead zones, and
+reports the travel each command reached so a control stuck at 0 is obvious.
 
 Note the sign convention: a **positive yaw command yaws the nose left** in this
-coefficient set, so the right pedal must produce a *negative* yaw command. Set
-`invert` accordingly. (See `docs/MODEL_NOTES.md` §3.)
+coefficient set, so the right pedal must produce a *negative* yaw command —
+hence `invert = true` on the yaw axis. (See `docs/MODEL_NOTES.md` §3.)
 
 ---
 

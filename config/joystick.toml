@@ -1,96 +1,93 @@
 # ---------------------------------------------------------------------------
 # AE4803 PySim - joystick / HOTAS mapping
 #
-# TARGET must be CLOSED when running this sim. TARGET hides the three physical
-# Thrustmaster devices behind one virtual controller; with it closed, SDL sees
-# the real devices and we bind to them BY NAME, so a reboot cannot re-order
-# them the way the old "Joystick1" index binding did.
+# TARGET must be CLOSED. With it closed SDL sees the real devices and we bind
+# BY NAME, so a reboot cannot re-order them the way "Joystick1" did.
 #
-# To find the names and axis numbers on this rig:
-#     python tools/list_devices.py          # names, axis/button counts
-#     python tools/calibrate_axes.py        # live axis values while you move things
+# Measured on this rig 2026-11-15 (tools/list_devices.py):
+#     [0] "Joystick - HOTAS Warthog"   2 axes, 19 buttons, 1 hat
+#     [1] "Throttle - HOTAS Warthog"   5 axes, 32 buttons, 1 hat
+#     TFRP rudder pedals: NOT PRESENT - not enumerated by SDL.
 #
-# `device` is matched case-insensitively as a SUBSTRING of the SDL device name,
-# so "Warthog Joystick" matches "Thrustmaster HOTAS Warthog Joystick".
+# Retune with:  python tools/calibrate_axes.py    (live bars, watch on screen)
 # ---------------------------------------------------------------------------
 
 [meta]
-# Bump when you change the mapping, so logs record which calibration was used.
-revision = "2026-11-15"
+revision = "2026-11-15 rig measurement"
 
 # --- Roll: Warthog stick, X axis -------------------------------------------
 [controls.roll]
-device  = "Warthog Joystick"
+device  = "Joystick - HOTAS Warthog"
 axis    = 0
-invert  = false
-# Raw SDL range that maps to the full -1..1 command. Adjust with calibrate_axes.py
-# if a stick does not reach the stops.
+invert  = false            # stick right -> +roll command -> rolls right
 raw_min = -1.0
 raw_max = 1.0
-# Matches deadband_stick_lat in sim_init.mat (+/- 0.01).
-deadband_lower = -0.01
+deadband_lower = -0.01     # deadband_stick_lat from sim_init.mat
 deadband_upper = 0.01
-# Output range after scaling; the sim saturates to [-1, 1] anyway.
 output = "bipolar"
 
 # --- Pitch: Warthog stick, Y axis ------------------------------------------
 [controls.pitch]
-device  = "Warthog Joystick"
+device  = "Joystick - HOTAS Warthog"
 axis    = 1
-invert  = false
+invert  = false            # stick AFT -> +pitch command -> nose up
 raw_min = -1.0
 raw_max = 1.0
-deadband_lower = -0.01      # deadband_stick_long
+deadband_lower = -0.01     # deadband_stick_long
 deadband_upper = 0.01
 output = "bipolar"
 
-# --- Yaw: TFRP rudder pedals -----------------------------------------------
-# On the TFRP the rudder is the differential of the two pedals and SDL usually
-# reports it as a single centred axis. If your pedals present left/right as two
-# separate axes instead, set `axis_minus` and the sim will use (axis - axis_minus).
-[controls.yaw]
-device  = "T-Pedals"
-axis    = 2
-# axis_minus = 3
-invert  = false
-raw_min = -1.0
-raw_max = 1.0
-deadband_lower = -0.01      # deadband_pedal
-deadband_upper = 0.01
-output = "bipolar"
-
-# --- Throttle: Warthog throttle, right lever -------------------------------
-# SDL reports throttle levers as -1 (forward/max) .. +1 (back/idle) on most
-# Thrustmaster hardware, hence invert = true to get 0 = idle, 1 = full.
+# --- Throttle: Warthog throttle, RIGHT lever -------------------------------
+# Measured full travel on this rig: about -1.0 (idle stop) to +1.0 (full).
+# unipolar + invert=false maps -1 -> 0.0 (idle) and +1 -> 1.0 (full).
 [controls.throttle]
-device  = "Warthog Throttle"
+device  = "Throttle - HOTAS Warthog"
+axis    = 2
+invert  = false
+raw_min = -1.0
+raw_max = 1.0
+deadband_lower = 0.0       # no dead zone on throttle in the Simulink model
+deadband_upper = 0.0
+output = "unipolar"
+
+# --- Yaw: T-Pendular-Rudder pedals -----------------------------------------
+# NOTE the pedals are a T-Pendular-Rudder (TPR, VID_044F PID_B68F), not the
+# TFRP named in the lab notes. It presents 3 axes:
+#     axis 0  left toe brake   (rests at +1.000)
+#     axis 1  right toe brake  (rests at +1.000)
+#     axis 2  RUDDER           (self-centring, measured -0.573 .. +0.870 over a
+#                               partial sweep; true travel is the full +/-1)
+#
+# The pedals are INVISIBLE to SDL 2.28.4 (pygame 2.6.1) - see README. They only
+# enumerate under SDL >= 2.32, which is why this project uses pygame-ce.
+#
+# SIGN NOTE: in this coefficient set Cn_dr < 0, so a POSITIVE yaw command
+# deflects the rudder positive and yaws the nose LEFT. Pressing the RIGHT pedal
+# drives this axis positive, so invert = true is needed for right pedal = nose
+# right. If it turns out backwards in flight, flip this one word.
+[controls.yaw]
+device  = "T-Pendular-Rudder"
 axis    = 2
 invert  = true
 raw_min = -1.0
 raw_max = 1.0
-deadband_lower = 0.0        # no dead zone on throttle in the Simulink model
-deadband_upper = 0.0
-output = "unipolar"         # maps to 0..1
+deadband_lower = -0.01     # deadband_pedal from sim_init.mat
+deadband_upper = 0.01
+output = "bipolar"
 
 # --- Stale-axis detection ---------------------------------------------------
-# The old TARGET setup had a failure where the throttle axis silently stopped
-# updating after the rig sat idle. This watches for exactly that: an axis whose
-# value has not changed at all while OTHER axes are clearly moving.
+# Watches for the old TARGET failure: an axis that silently stops updating.
+# Only axes that have already moved this session are watched, so an untouched
+# control is never flagged. A deliberately parked throttle cannot be told apart
+# from a dead one, hence the long window.
 [stale_check]
 enabled = true
-# An axis counts as "moving" if it changes by more than this between polls.
 motion_threshold = 0.002
-# Seconds an axis may stay perfectly frozen, while others move, before warning.
-freeze_seconds = 5.0
-# Don't warn again about the same axis more often than this.
-repeat_warning_seconds = 30.0
+freeze_seconds = 25.0
+repeat_warning_seconds = 60.0
 
 # --- Polling ---------------------------------------------------------------
 [polling]
-# The Simulink Pilot Joystick block ran at 1/30 s. The physics loop runs much
-# faster and simply holds the most recent sample, exactly as Simulink did.
 rate_hz = 60.0
-# If no configured device is present, fall back to zero commands + trim throttle
-# rather than refusing to start (useful for desk testing without hardware).
 allow_missing_devices = true
 missing_device_throttle = 0.618

@@ -137,17 +137,34 @@ def test_scripted_joystick_drives_the_model():
     assert src.poll().pitch == pytest.approx(0.0)
 
 
-def test_stale_axis_watchdog_flags_a_frozen_axis():
+def test_stale_axis_watchdog_flags_an_axis_that_dies_after_working():
     wd = StaleAxisWatchdog(StaleCheckConfig(enabled=True, motion_threshold=0.002,
                                             freeze_seconds=1.0,
                                             repeat_warning_seconds=10.0))
     t = 0.0
-    # roll moves every poll; throttle is bit-for-bit frozen
-    for i in range(40):
+    # phase 1: both axes work normally
+    for i in range(20):
         t += 0.1
-        wd.update({"roll": 0.01 * i, "throttle": 0.5}, t)
+        wd.update({"roll": 0.01 * i, "throttle": 0.01 * i}, t)
+    assert wd.warnings == []
+
+    # phase 2: the throttle dies - bit-for-bit frozen while roll keeps moving
+    for i in range(20, 60):
+        t += 0.1
+        wd.update({"roll": 0.01 * i, "throttle": 0.19}, t)
     assert any("throttle" in w for w in wd.warnings)
     assert not any("roll" in w for w in wd.warnings)
+
+
+def test_watchdog_ignores_a_control_that_was_never_touched():
+    """A parked or untouched control is not evidence of a fault - flagging it
+    every flight would just train people to ignore the warning."""
+    wd = StaleAxisWatchdog(StaleCheckConfig(enabled=True, freeze_seconds=1.0))
+    t = 0.0
+    for i in range(60):
+        t += 0.1
+        wd.update({"roll": 0.01 * i, "throttle": 0.5}, t)
+    assert wd.warnings == []
 
 
 def test_watchdog_quiet_when_everything_moves():
